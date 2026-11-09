@@ -16,7 +16,6 @@ import TransactionReview from '../components/TransactionReview.vue'
 
 import type {
   TransactionAnalysis,
-  RiskStatus,
 } from '../types/transaction'
 
 const requestText = ref('')
