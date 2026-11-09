@@ -156,7 +156,7 @@ export async function analyzeTransaction(
     id: crypto.randomUUID(),
     request,
     status: finalStatus,
-    message: explanation.message,
+    message: [explanation.message, explanation.recommendation].filter(Boolean).join(' '),
     reasons: [...new Set([...finalReasons, ...explanation.reasons])],
     details,
     createdAt: new Date().toISOString(),
