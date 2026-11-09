@@ -4,11 +4,7 @@ import type {
   TransactionAnalysis,
   TransactionDetails,
 } from '../types/transaction.js'
-import {
-  extractTransactionDetails,
-  analyzeRisk,
-  generateExplanation,
-} from './ai.service.js'
+import { analyzeRisk } from './ai.service.js'
 import type { Analysis } from './ai.service.js'
 import { TransactionModel } from '../models/transaction.model.js'
 
@@ -30,15 +26,13 @@ async function saveAnalysis(
   const saved = await TransactionModel.create({
     request: analysis.request,
     status: analysis.status,
+    score: analysis.score,
     message: analysis.message,
     reasons: analysis.reasons,
     details: analysis.details,
   })
 
-  return {
-    ...analysis,
-    id: saved._id.toString(),
-  }
+  return { ...analysis, id: saved._id.toString() }
 }
 
 const dangerousPatterns = [
@@ -52,17 +46,16 @@ const dangerousPatterns = [
 
 function inspectRequest(request: string): string[] {
   if (dangerousPatterns.some((pattern) => pattern.test(request))) {
-    return [
-      'The request contains an attempt to expose secrets or bypass security controls.',
-    ]
+    return ['The request attempts to expose secrets or bypass security controls.']
   }
-
   return []
 }
 
-function evaluatePolicy(
-  details: TransactionDetails,
-): { status: RiskStatus; reasons: string[] } {
+function evaluatePolicy(details: TransactionDetails): {
+  status: RiskStatus
+  scoreFloor: number
+  reasons: string[]
+} {
   const reasons: string[] = []
 
   if (
@@ -73,42 +66,35 @@ function evaluatePolicy(
     !details.recipient
   ) {
     reasons.push('Some required transaction details are missing.')
-    return { status: 'WARN', reasons }
+    return { status: 'WARN', scoreFloor: 21, reasons }
   }
 
   const amount = Number(details.amount)
-
   if (!Number.isFinite(amount) || amount <= 0) {
     reasons.push('The transaction amount is invalid or unclear.')
-    return { status: 'WARN', reasons }
+    return { status: 'WARN', scoreFloor: 21, reasons }
   }
 
   if (amount > HIGH_VALUE_THRESHOLD) {
-    reasons.push(
-      `The transaction amount exceeds the demo threshold of ${HIGH_VALUE_THRESHOLD}.`,
-    )
-    return { status: 'WARN', reasons }
+    reasons.push(`The amount exceeds the demo threshold of ${HIGH_VALUE_THRESHOLD}.`)
+    return { status: 'WARN', scoreFloor: 21, reasons }
   }
 
-  return { status: 'ALLOW', reasons }
-}
-
-function toRiskStatus(analysis: Analysis): RiskStatus {
-  return analysis.status
+  return { status: 'ALLOW', scoreFloor: 1, reasons }
 }
 
 export async function analyzeTransaction(
   request: string
 ): Promise<TransactionAnalysis> {
-  // 1. Apply hard security checks before sending user content to an AI model.
+  // Deterministic security checks run before any AI call.
   const securityReasons = inspectRequest(request)
-
   if (securityReasons.length > 0) {
     return saveAnalysis({
       id: crypto.randomUUID(),
       request,
       status: 'BLOCK',
-      message: 'The request contains an attempt to expose secrets or bypass security controls.',
+      score: 100,
+      message: 'This request contains an attempt to expose secrets or bypass security.',
       reasons: securityReasons,
       details: {
         amount: null,
@@ -121,43 +107,26 @@ export async function analyzeTransaction(
     })
   }
 
-  // 2. Agent 1: extract structured transaction details.
-  const extracted = await extractTransactionDetails(request)
-
-  const details: TransactionDetails = {
-    amount: extracted.amount,
-    asset: extracted.asset,
-    sourceNetwork: extracted.sourceNetwork,
-    destinationNetwork: extracted.destinationNetwork,
-    recipient: extracted.recipient,
-  }
-
-  // 3. Deterministic policy checks establish a minimum risk status.
+  // A single AI call extracts transaction data and assesses risk.
+  const ai: Analysis = await analyzeRisk(request)
+  const details: TransactionDetails = ai.details
   const policy = evaluatePolicy(details)
 
-  // 4. Agent 2: analyze risk using the configured knowledge base.
-  const riskAnalysis = await analyzeRisk(extracted, request)
+  const finalStatus = stricterStatus(policy.status, ai.status)
+  let score = Math.max(ai.score, policy.scoreFloor)
+  if (finalStatus === 'BLOCK') score = Math.max(score, 80)
+  if (finalStatus === 'WARN') score = Math.max(score, 21)
 
-  // 5. Policy rules may raise risk, but the AI cannot override them.
-  const finalStatus = stricterStatus(policy.status, toRiskStatus(riskAnalysis))
-  const finalReasons = [...new Set([...policy.reasons, ...riskAnalysis.reasons])]
+  const reasons = [...new Set([...policy.reasons, ...ai.reasons])].slice(0, 4)
+  const message = [ai.message, ai.recommendation].filter(Boolean).join(' ')
 
-  const analysisForExplanation: Analysis = {
-    ...riskAnalysis,
-    status: finalStatus,
-    reasons: finalReasons,
-  }
-
-  // 6. Agent 3: produce a human-readable explanation.
-  const explanation = await generateExplanation(analysisForExplanation)
-
-  // Keep the authoritative status and all detected reasons regardless of AI wording.
   return saveAnalysis({
     id: crypto.randomUUID(),
     request,
     status: finalStatus,
-    message: [explanation.message, explanation.recommendation].filter(Boolean).join(' '),
-    reasons: [...new Set([...finalReasons, ...explanation.reasons])],
+    score,
+    message,
+    reasons,
     details,
     createdAt: new Date().toISOString(),
   })
