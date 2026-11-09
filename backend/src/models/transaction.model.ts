@@ -2,6 +2,7 @@ import mongoose, { Schema } from 'mongoose'
 
 const transactionSchema = new Schema(
   {
+    analysisId: { type: String, required: true, unique: true, index: true },
     request: { type: String, required: true, trim: true },
     status: {
       type: String,
