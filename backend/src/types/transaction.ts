@@ -1,4 +1,3 @@
-
 export type RiskStatus = 'ALLOW' | 'WARN' | 'BLOCK'
 
 export interface TransactionDetails {
@@ -13,6 +12,7 @@ export interface TransactionAnalysis {
   id: string
   request: string
   status: RiskStatus
+  score: number
   message: string
   reasons: string[]
   details: TransactionDetails
