@@ -4,10 +4,25 @@ import type {
   TransactionAnalysis,
   TransactionDetails,
 } from '../types/transaction.js'
-import { extractTransactionDetails } from './ai.service.js'
+import {
+  extractTransactionDetails,
+  analyzeRisk,
+  generateExplanation,
+} from './ai.service.js'
+import type { Analysis } from './ai.service.js'
 import { TransactionModel } from '../models/transaction.model.js'
 
 const HIGH_VALUE_THRESHOLD = 1000
+
+const statusRank: Record<RiskStatus, number> = {
+  ALLOW: 0,
+  WARN: 1,
+  BLOCK: 2,
+}
+
+function stricterStatus(first: RiskStatus, second: RiskStatus): RiskStatus {
+  return statusRank[first] >= statusRank[second] ? first : second
+}
 
 async function saveAnalysis(
   analysis: TransactionAnalysis
@@ -36,26 +51,19 @@ const dangerousPatterns = [
 ]
 
 function inspectRequest(request: string): string[] {
-  const reasons: string[] = []
-
   if (dangerousPatterns.some((pattern) => pattern.test(request))) {
-    reasons.push(
+    return [
       'The request contains an attempt to expose secrets or bypass security controls.',
-    )
+    ]
   }
 
-  return reasons
+  return []
 }
 
 function evaluatePolicy(
-  request: string,
   details: TransactionDetails,
 ): { status: RiskStatus; reasons: string[] } {
-  const reasons = inspectRequest(request)
-
-  if (reasons.length > 0) {
-    return { status: 'BLOCK', reasons }
-  }
+  const reasons: string[] = []
 
   if (
     !details.amount ||
@@ -82,18 +90,17 @@ function evaluatePolicy(
     return { status: 'WARN', reasons }
   }
 
-  reasons.push(
-    'Basic policy checks passed. Network, token, recipient, and contract verification are still required.',
-  )
-
   return { status: 'ALLOW', reasons }
+}
+
+function toRiskStatus(analysis: Analysis): RiskStatus {
+  return analysis.status
 }
 
 export async function analyzeTransaction(
   request: string
 ): Promise<TransactionAnalysis> {
-
-  // 1. Check malicious patterns before calling AI
+  // 1. Apply hard security checks before sending user content to an AI model.
   const securityReasons = inspectRequest(request)
 
   if (securityReasons.length > 0) {
@@ -111,10 +118,10 @@ export async function analyzeTransaction(
         recipient: null,
       },
       createdAt: new Date().toISOString(),
-    })    
+    })
   }
 
-  // 2. Only safe-looking requests reach AI
+  // 2. Agent 1: extract structured transaction details.
   const extracted = await extractTransactionDetails(request)
 
   const details: TransactionDetails = {
@@ -125,17 +132,32 @@ export async function analyzeTransaction(
     recipient: extracted.recipient,
   }
 
-  // 3. Apply deterministic policy
-  const policy = evaluatePolicy(request, details)
+  // 3. Deterministic policy checks establish a minimum risk status.
+  const policy = evaluatePolicy(details)
 
+  // 4. Agent 2: analyze risk using the configured knowledge base.
+  const riskAnalysis = await analyzeRisk(extracted, request)
+
+  // 5. Policy rules may raise risk, but the AI cannot override them.
+  const finalStatus = stricterStatus(policy.status, toRiskStatus(riskAnalysis))
+  const finalReasons = [...new Set([...policy.reasons, ...riskAnalysis.reasons])]
+
+  const analysisForExplanation: Analysis = {
+    ...riskAnalysis,
+    status: finalStatus,
+    reasons: finalReasons,
+  }
+
+  // 6. Agent 3: produce a human-readable explanation.
+  const explanation = await generateExplanation(analysisForExplanation)
+
+  // Keep the authoritative status and all detected reasons regardless of AI wording.
   return saveAnalysis({
     id: crypto.randomUUID(),
     request,
-    status: policy.status,
-    message: policy.status === 'ALLOW'
-      ? 'Basic policy checks passed. Human approval is still required.'
-      : 'The transaction needs further security review.',
-    reasons: policy.reasons,
+    status: finalStatus,
+    message: explanation.message,
+    reasons: [...new Set([...finalReasons, ...explanation.reasons])],
     details,
     createdAt: new Date().toISOString(),
   })
