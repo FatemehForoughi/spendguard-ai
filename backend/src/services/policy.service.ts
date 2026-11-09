@@ -112,7 +112,8 @@ export async function analyzeTransaction(
   const details: TransactionDetails = ai.details
   const policy = evaluatePolicy(details)
 
-  const finalStatus = stricterStatus(policy.status, ai.status)
+  const scoreStatus: RiskStatus = ai.score >= 80 ? 'BLOCK' : ai.score >= 21 ? 'WARN' : 'ALLOW'
+  const finalStatus = stricterStatus(stricterStatus(policy.status, ai.status), scoreStatus)
   let score = Math.max(ai.score, policy.scoreFloor)
   if (finalStatus === 'BLOCK') score = Math.max(score, 80)
   if (finalStatus === 'WARN') score = Math.max(score, 21)
