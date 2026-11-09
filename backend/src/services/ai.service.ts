@@ -75,7 +75,7 @@ function createClient(): OpenAI {
 
 function loadPrompt(name: string): string {
   try {
-    return readFileSync(join(__dirname, 'ai-prompts', `${name}.md`), 'utf-8').trim()
+    return readFileSync(join(__dirname, '..', 'ai-prompts', `${name}.md`), 'utf-8').trim()
   } catch {
     throw new Error(`Prompt file not found: ${name}.md`)
   }
