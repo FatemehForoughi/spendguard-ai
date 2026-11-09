@@ -22,12 +22,10 @@ const transactionDetailsSchema = z.object({
 const analysisSchema = z.object({
   details: transactionDetailsSchema,
   score: z.number().int().min(1).max(100),
-  level: z.enum(['low', 'medium', 'high', 'critical']),
   status: z.enum(['ALLOW', 'WARN', 'BLOCK']),
   message: z.string(),
   reasons: z.array(z.string()).max(4).default([]),
   recommendation: z.string(),
-  confidence: z.enum(['high', 'medium', 'low']),
 })
 
 export type Analysis = z.infer<typeof analysisSchema>
@@ -56,12 +54,12 @@ function loadPrompt(): string {
 export async function analyzeRisk(request: string): Promise<Analysis> {
   const client = createClient()
   const systemPrompt = loadPrompt()
-  const knowledge = knowledgeService.getCombinedPrompt().slice(0, 6000)
+  const knowledge = knowledgeService.getCombinedPrompt().slice(0, 4000)
 
   const completion = await client.chat.completions.create({
     model: env.NEAR_AI_MODEL,
     temperature: 0,
-    max_tokens: 450,
+    max_tokens: 300,
     response_format: { type: 'json_object' },
     messages: [
       {
