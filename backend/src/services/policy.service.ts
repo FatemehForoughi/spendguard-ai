@@ -24,6 +24,7 @@ async function saveAnalysis(
   analysis: TransactionAnalysis
 ): Promise<TransactionAnalysis> {
   const saved = await TransactionModel.create({
+    analysisId: analysis.id,
     request: analysis.request,
     status: analysis.status,
     score: analysis.score,
