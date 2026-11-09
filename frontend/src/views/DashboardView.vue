@@ -176,7 +176,6 @@ function resetAnalysis() {
     <TransactionReview
       v-else
       :analysis="analysis"
-      :blocked="analysis.status !== 'ALLOW'"
       @reset="resetAnalysis"
       @approve="handleApproval"
     />
