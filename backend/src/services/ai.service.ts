@@ -66,7 +66,9 @@ function createClient(): OpenAI {
   return new OpenAI({
     apiKey: env.NEAR_AI_API_KEY,
     baseURL: env.NEAR_AI_BASE_URL,
-    timeout: 25_000,
+    // NEAR AI risk analysis can take longer when the knowledge prompt is large.
+    // Keep retries for transient network failures, with a longer per-attempt timeout.
+    timeout: 90_000,
     maxRetries: 2,
   })
 }
