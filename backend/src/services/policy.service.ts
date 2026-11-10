@@ -116,7 +116,7 @@ export async function analyzeTransaction(
     })
   }
 
-  // A single AI call extracts transaction data and assesses risk.
+  // The AI service extracts transaction data and assesses risk, with bounded recovery.
   const ai: Analysis = await analyzeRisk(request)
   const details: TransactionDetails = ai.details
   const policy = evaluatePolicy(details)

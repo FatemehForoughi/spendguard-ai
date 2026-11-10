@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+const ANALYSIS_TIMEOUT_MS = 90_000
+const OUTPUT_TOKEN_LIMITS = [1024, 2048] as const
 
 // ------------------- Schema -------------------
 
@@ -23,9 +25,9 @@ const analysisSchema = z.object({
   details: transactionDetailsSchema,
   score: z.number().int().min(1).max(100),
   status: z.enum(['ALLOW', 'WARN', 'BLOCK']),
-  message: z.string(),
-  reasons: z.array(z.string()).max(4).default([]),
-  recommendation: z.string(),
+  message: z.string().trim().min(1),
+  reasons: z.array(z.string().trim().min(1)).max(4).default([]),
+  recommendation: z.string().trim().min(1),
 })
 
 export type Analysis = z.infer<typeof analysisSchema>
@@ -41,14 +43,44 @@ function createClient(): OpenAI {
   return new OpenAI({
     apiKey: env.NEAR_AI_API_KEY,
     baseURL: env.NEAR_AI_BASE_URL,
-    timeout: 90_000,
+    timeout: ANALYSIS_TIMEOUT_MS,
     maxRetries: 1,
   })
 }
 
-// One model call extracts details, scores risk, and writes a short result.
+// Each analysis call extracts details, scores risk, and writes a short result.
 function loadPrompt(): string {
   return readFileSync(join(__dirname, '..', 'ai-prompts', 'analyze.md'), 'utf-8').trim()
+}
+
+function parseCompletion(
+  completion: OpenAI.Chat.Completions.ChatCompletion,
+): Analysis | undefined {
+  const choice = completion?.choices?.[0]
+  if (!choice?.message) return undefined
+
+  if (choice.message.refusal || choice.finish_reason === 'content_filter') {
+    throw new Error('NEAR AI declined to analyze this request')
+  }
+  if (choice.finish_reason === 'length' || !choice.finish_reason) return undefined
+  if (choice.finish_reason !== 'stop') {
+    throw new Error('NEAR AI returned an unexpected completion type')
+  }
+
+  if (typeof choice.message.content !== 'string') return undefined
+  const content = choice.message.content.trim()
+  if (!content) return undefined
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined
+    throw error
+  }
+
+  const validation = analysisSchema.safeParse(parsed)
+  return validation.success ? validation.data : undefined
 }
 
 export async function analyzeRisk(request: string): Promise<Analysis> {
@@ -60,23 +92,34 @@ export async function analyzeRisk(request: string): Promise<Analysis> {
   const client = createClient()
   const systemPrompt = loadPrompt()
   const knowledge = knowledgeService.getCombinedPrompt()
+  const signal = AbortSignal.timeout(ANALYSIS_TIMEOUT_MS)
 
-  const completion = await client.chat.completions.create({
-    model,
-    temperature: 0,
-    max_tokens: 300,
-    response_format: { type: 'json_object' },
-    messages: [
+  for (const [attempt, maxTokens] of OUTPUT_TOKEN_LIMITS.entries()) {
+    signal.throwIfAborted()
+    const retryInstruction = attempt === 0 ? '' :
+      '\n\nThe previous response was incomplete or invalid. Re-analyze the original request and return one complete JSON object matching the schema above. Include every required field, use null for unknown transaction details, and keep explanations concise. Do not include Markdown.'
+
+    const completion = await client.chat.completions.create(
       {
-        role: 'system',
-        content: `${systemPrompt}\n\nSecurity knowledge:\n${knowledge}`,
+        model,
+        temperature: 0,
+        max_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `${systemPrompt}\n\nSecurity knowledge:\n${knowledge}${retryInstruction}`,
+          },
+          { role: 'user', content: request },
+        ],
       },
-      { role: 'user', content: request },
-    ],
-  })
+      { signal },
+    )
 
-  const content = completion.choices[0]?.message?.content
-  if (!content) throw new Error('NEAR AI returned an empty analysis')
+    signal.throwIfAborted()
+    const analysis = parseCompletion(completion)
+    if (analysis) return analysis
+  }
 
-  return analysisSchema.parse(JSON.parse(content))
+  throw new Error('NEAR AI did not return a complete, valid analysis')
 }
