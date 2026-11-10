@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-ai-assets.mjs",
     "start": "node dist/server.js"
   },
   "keywords": [],

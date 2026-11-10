@@ -4,26 +4,36 @@ import type {
   TransactionAnalysis,
   TransactionDetails,
 } from '../types/transaction.js'
-import { extractTransactionDetails } from './ai.service.js'
+import { analyzeRisk } from './ai.service.js'
+import type { Analysis } from './ai.service.js'
 import { TransactionModel } from '../models/transaction.model.js'
 
 const HIGH_VALUE_THRESHOLD = 1000
+
+const statusRank: Record<RiskStatus, number> = {
+  ALLOW: 0,
+  WARN: 1,
+  BLOCK: 2,
+}
+
+function stricterStatus(first: RiskStatus, second: RiskStatus): RiskStatus {
+  return statusRank[first] >= statusRank[second] ? first : second
+}
 
 async function saveAnalysis(
   analysis: TransactionAnalysis
 ): Promise<TransactionAnalysis> {
   const saved = await TransactionModel.create({
+    analysisId: analysis.id,
     request: analysis.request,
     status: analysis.status,
+    score: analysis.score,
     message: analysis.message,
     reasons: analysis.reasons,
     details: analysis.details,
   })
 
-  return {
-    ...analysis,
-    id: saved._id.toString(),
-  }
+  return { ...analysis, id: saved._id.toString() }
 }
 
 const dangerousPatterns = [
@@ -36,26 +46,18 @@ const dangerousPatterns = [
 ]
 
 function inspectRequest(request: string): string[] {
-  const reasons: string[] = []
-
   if (dangerousPatterns.some((pattern) => pattern.test(request))) {
-    reasons.push(
-      'The request contains an attempt to expose secrets or bypass security controls.',
-    )
+    return ['The request attempts to expose secrets or bypass security controls.']
   }
-
-  return reasons
+  return []
 }
 
-function evaluatePolicy(
-  request: string,
-  details: TransactionDetails,
-): { status: RiskStatus; reasons: string[] } {
-  const reasons = inspectRequest(request)
-
-  if (reasons.length > 0) {
-    return { status: 'BLOCK', reasons }
-  }
+function evaluatePolicy(details: TransactionDetails): {
+  status: RiskStatus
+  scoreFloor: number
+  reasons: string[]
+} {
+  const reasons: string[] = []
 
   if (
     !details.amount ||
@@ -65,43 +67,35 @@ function evaluatePolicy(
     !details.recipient
   ) {
     reasons.push('Some required transaction details are missing.')
-    return { status: 'WARN', reasons }
+    return { status: 'WARN', scoreFloor: 21, reasons }
   }
 
   const amount = Number(details.amount)
-
   if (!Number.isFinite(amount) || amount <= 0) {
     reasons.push('The transaction amount is invalid or unclear.')
-    return { status: 'WARN', reasons }
+    return { status: 'WARN', scoreFloor: 21, reasons }
   }
 
   if (amount > HIGH_VALUE_THRESHOLD) {
-    reasons.push(
-      `The transaction amount exceeds the demo threshold of ${HIGH_VALUE_THRESHOLD}.`,
-    )
-    return { status: 'WARN', reasons }
+    reasons.push(`The amount exceeds the demo threshold of ${HIGH_VALUE_THRESHOLD}.`)
+    return { status: 'WARN', scoreFloor: 21, reasons }
   }
 
-  reasons.push(
-    'Basic policy checks passed. Network, token, recipient, and contract verification are still required.',
-  )
-
-  return { status: 'ALLOW', reasons }
+  return { status: 'ALLOW', scoreFloor: 1, reasons }
 }
 
 export async function analyzeTransaction(
   request: string
 ): Promise<TransactionAnalysis> {
-
-  // 1. Check malicious patterns before calling AI
+  // Deterministic security checks run before any AI call.
   const securityReasons = inspectRequest(request)
-
   if (securityReasons.length > 0) {
     return saveAnalysis({
       id: crypto.randomUUID(),
       request,
       status: 'BLOCK',
-      message: 'The request contains an attempt to expose secrets or bypass security controls.',
+      score: 100,
+      message: 'This request contains an attempt to expose secrets or bypass security.',
       reasons: securityReasons,
       details: {
         amount: null,
@@ -111,31 +105,30 @@ export async function analyzeTransaction(
         recipient: null,
       },
       createdAt: new Date().toISOString(),
-    })    
+    })
   }
 
-  // 2. Only safe-looking requests reach AI
-  const extracted = await extractTransactionDetails(request)
+  // A single AI call extracts transaction data and assesses risk.
+  const ai: Analysis = await analyzeRisk(request)
+  const details: TransactionDetails = ai.details
+  const policy = evaluatePolicy(details)
 
-  const details: TransactionDetails = {
-    amount: extracted.amount,
-    asset: extracted.asset,
-    sourceNetwork: extracted.sourceNetwork,
-    destinationNetwork: extracted.destinationNetwork,
-    recipient: extracted.recipient,
-  }
+  const scoreStatus: RiskStatus = ai.score >= 80 ? 'BLOCK' : ai.score >= 21 ? 'WARN' : 'ALLOW'
+  const finalStatus = stricterStatus(stricterStatus(policy.status, ai.status), scoreStatus)
+  let score = Math.max(ai.score, policy.scoreFloor)
+  if (finalStatus === 'BLOCK') score = Math.max(score, 80)
+  if (finalStatus === 'WARN') score = Math.max(score, 21)
 
-  // 3. Apply deterministic policy
-  const policy = evaluatePolicy(request, details)
+  const reasons = [...new Set([...policy.reasons, ...ai.reasons])].slice(0, 4)
+  const message = [ai.message, ai.recommendation].filter(Boolean).join(' ')
 
   return saveAnalysis({
     id: crypto.randomUUID(),
     request,
-    status: policy.status,
-    message: policy.status === 'ALLOW'
-      ? 'Basic policy checks passed. Human approval is still required.'
-      : 'The transaction needs further security review.',
-    reasons: policy.reasons,
+    status: finalStatus,
+    score,
+    message,
+    reasons,
     details,
     createdAt: new Date().toISOString(),
   })

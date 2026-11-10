@@ -1,114 +1,97 @@
-
 <script setup lang="ts">
-import {
-  ShieldCheck,
-  ShieldAlert,
-  ShieldX,
-  Clock,
-  CheckCircle2,
-} from 'lucide-vue-next'
-
 import { computed } from 'vue'
-
+import { ShieldCheck, ShieldAlert, ShieldX, X } from 'lucide-vue-next'
 import type { TransactionAnalysis } from '../types/transaction'
-import TransactionDetails from './TransactionDetails.vue'
-import TransactionApproval from './TransactionApproval.vue'
 
 const emit = defineEmits<{
   reset: []
-  approve: [fingerprint: string]
 }>()
 
 const props = defineProps<{
   analysis: TransactionAnalysis
 }>()
 
-const fingerprint = computed(() =>
-  JSON.stringify({
-    request: props.analysis.request,
-    details: props.analysis.details,
-  }),
-)
-
-const canApprove = computed(() => {
-  const details = props.analysis.details
-
-  return Boolean(
-    details.amount &&
-    details.asset &&
-    details.sourceNetwork &&
-    details.destinationNetwork &&
-    details.recipient,
-  )
+const scoreLabel = computed(() => `${props.analysis.score}%`)
+const statusLabel = computed(() => {
+  if (props.analysis.status === 'ALLOW') return 'LOW RISK'
+  if (props.analysis.status === 'WARN') return 'REVIEW REQUIRED'
+  return 'HIGH RISK'
 })
 </script>
 
 <template>
-  <section class="review-card">
-    <div class="review-heading">
-      <div>
-        <h2>Security Analysis</h2>
-        <p>SpendGuard AI transaction assessment</p>
-      </div>
-
-      <span class="status-badge" :class="analysis.status.toLowerCase()">
-        <ShieldCheck v-if="analysis.status === 'ALLOW'" :size="16" />
-        <ShieldAlert v-else-if="analysis.status === 'WARN'" :size="16" />
-        <ShieldX v-else :size="16" />
-        {{ analysis.status }}
-      </span>
-    </div>
-
-    <div class="review-request">
-      <span class="review-label">YOUR REQUEST</span>
-      <p>{{ analysis.request }}</p>
-    </div>
-
-    <TransactionDetails :details="analysis.details" />
-
-    <div class="review-message">
-      <div class="message-icon">
-        <CheckCircle2 v-if="analysis.status === 'ALLOW'" />
-        <ShieldAlert v-else-if="analysis.status === 'WARN'" />
-        <ShieldX v-else />
-      </div>
-
-      <div>
-        <h3>{{ analysis.message }}</h3>
-        <p>Based on the current demo security rules.</p>
-      </div>
-    </div>
-
-    <div class="risk-reasons">
-      <h3>Analysis details</h3>
-      <ul>
-        <li v-for="reason in analysis.reasons" :key="reason">
-          {{ reason }}
-        </li>
-      </ul>
-    </div>
-
-    <TransactionApproval
-      :transaction-fingerprint="fingerprint"
-      :can-approve="canApprove"
-      :blocked="analysis.status === 'BLOCK'"
-      @approve="emit('approve', $event)"
-    />
-
-    <div class="review-footer">
-      <div class="analysis-time">
-        <Clock :size="15" />
-        {{ new Date(analysis.createdAt).toLocaleString() }}
-      </div>
-
-      <button class="reset-button" @click="emit('reset')">
-        New request
+  <div
+    class="risk-modal-backdrop"
+    role="presentation"
+    @click.self="emit('reset')"
+  >
+    <section
+      class="risk-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risk-modal-title"
+    >
+      <button
+        class="risk-modal-close"
+        type="button"
+        aria-label="Close analysis"
+        @click="emit('reset')"
+      >
+        <X :size="20" />
       </button>
-    </div>
 
-    <p class="review-disclaimer">
-      Demo only. This analysis does not verify a real blockchain
-      transaction or authorize wallet execution.
-    </p>
-  </section>
+      <div class="risk-modal-heading">
+        <div class="risk-status-icon" :class="analysis.status.toLowerCase()">
+          <ShieldCheck v-if="analysis.status === 'ALLOW'" :size="25" />
+          <ShieldAlert v-else-if="analysis.status === 'WARN'" :size="25" />
+          <ShieldX v-else :size="25" />
+        </div>
+        <div>
+          <p class="risk-modal-eyebrow">SPENDGUARD AI RESULT</p>
+          <h2 id="risk-modal-title">Transaction risk analysis</h2>
+          <span class="risk-status-text" :class="analysis.status.toLowerCase()">
+            {{ statusLabel }}
+          </span>
+        </div>
+      </div>
+
+      <div class="risk-score-panel" :class="analysis.status.toLowerCase()">
+        <div class="risk-score-copy">
+          <span>Risk score</span>
+          <strong>{{ scoreLabel }}</strong>
+        </div>
+        <div
+          class="risk-score-track"
+          role="progressbar"
+          :aria-valuenow="analysis.score"
+          aria-valuemin="1"
+          aria-valuemax="100"
+          :aria-label="`Risk score ${scoreLabel}`"
+        >
+          <div
+            class="risk-score-fill"
+            :style="{ width: `${analysis.score}%` }"
+          ></div>
+        </div>
+        <p>Higher score means higher transaction risk.</p>
+      </div>
+
+      <div class="risk-result-message">
+        <p>{{ analysis.message }}</p>
+      </div>
+
+      <div class="risk-request-preview">
+        <span>ANALYZED REQUEST</span>
+        <p>{{ analysis.request }}</p>
+      </div>
+
+      <button class="risk-modal-done" type="button" @click="emit('reset')">
+        Analyze another transaction
+      </button>
+
+      <p class="risk-modal-disclaimer">
+        Demo only. No blockchain transaction was verified or executed.
+      </p>
+    </section>
+  </div>
 </template>

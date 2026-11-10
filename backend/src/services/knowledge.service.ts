@@ -6,7 +6,7 @@ import { dirname } from 'path'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const KNOWLEDGE_DIR = join(__dirname, 'ai-knowledge')
+const KNOWLEDGE_DIR = join(__dirname, '..', 'ai-knowledge')
 
 class KnowledgeService {
   private cache: Map<string, string>
