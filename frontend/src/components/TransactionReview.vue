@@ -80,6 +80,17 @@ const statusLabel = computed(() => {
         <p>{{ analysis.message }}</p>
       </div>
 
+      <section
+        v-if="analysis.reasons.length > 0"
+        class="risk-reasons"
+        aria-labelledby="risk-reasons-title"
+      >
+        <h3 id="risk-reasons-title">Risk reasons</h3>
+        <ul>
+          <li v-for="reason in analysis.reasons" :key="reason">{{ reason }}</li>
+        </ul>
+      </section>
+
       <div class="risk-request-preview">
         <span>ANALYZED REQUEST</span>
         <p>{{ analysis.request }}</p>

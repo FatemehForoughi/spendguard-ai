@@ -521,14 +521,18 @@ button {
 }
 
 .risk-reasons h3 {
+  margin: 0 0 8px;
   font-size: 14px;
 }
 
 .risk-reasons ul {
+  margin: 0;
   padding-left: 20px;
+  list-style: disc;
   color: #aab6c8;
   font-size: 13px;
   line-height: 2;
+  overflow-wrap: anywhere;
 }
 
 .review-footer {
