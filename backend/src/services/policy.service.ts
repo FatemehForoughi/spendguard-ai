@@ -120,7 +120,21 @@ export async function analyzeTransaction(
   if (finalStatus === 'WARN') score = Math.max(score, 21)
 
   const reasons = [...new Set([...policy.reasons, ...ai.reasons])].slice(0, 4)
-  const message = [ai.message, ai.recommendation].filter(Boolean).join(' ')
+  let message = [ai.message, ai.recommendation].filter(Boolean).join(' ')
+  if (finalStatus === 'WARN') {
+    message = [
+      'This transaction requires review.',
+      ...reasons,
+      'Verify the details and resolve the concerns before proceeding.',
+    ].join(' ')
+  }
+  if (finalStatus === 'BLOCK') {
+    message = [
+      'This transaction has high-risk indicators.',
+      ...reasons,
+      'Do not proceed with this transaction.',
+    ].join(' ')
+  }
 
   return saveAnalysis({
     id: crypto.randomUUID(),

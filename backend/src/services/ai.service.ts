@@ -34,7 +34,7 @@ export type ExtractedDetails = z.infer<typeof transactionDetailsSchema>
 // ------------------- Client -------------------
 
 function createClient(): OpenAI {
-  if (!env.NEAR_AI_API_KEY || !env.NEAR_AI_MODEL) {
+  if (!env.NEAR_AI_API_KEY) {
     throw new Error('NEAR AI is not configured')
   }
 
@@ -52,12 +52,17 @@ function loadPrompt(): string {
 }
 
 export async function analyzeRisk(request: string): Promise<Analysis> {
+  const model = env.NEAR_AI_MODEL
+  if (!model) {
+    throw new Error('NEAR AI is not configured')
+  }
+
   const client = createClient()
   const systemPrompt = loadPrompt()
   const knowledge = knowledgeService.getCombinedPrompt().slice(0, 4000)
 
   const completion = await client.chat.completions.create({
-    model: env.NEAR_AI_MODEL,
+    model,
     temperature: 0,
     max_tokens: 300,
     response_format: { type: 'json_object' },
