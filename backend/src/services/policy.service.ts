@@ -37,17 +37,25 @@ async function saveAnalysis(
 }
 
 const dangerousPatterns = [
-  /reveal.*(private key|seed phrase)/i,
-  /share.*(private key|seed phrase)/i,
-  /send.*(private key|seed phrase)/i,
-  /ignore all previous instructions/i,
-  /reveal.*system prompt/i,
-  /bypass.*security/i,
+  /\b(?:reveal|share|send)\b(?:(?!\b(?:reveal|share|send)\b)[^.!?;])*?\b(?:private\s+key|seed\s+phrase)\b/gi,
+  /\bignore\s+all\s+previous\s+instructions\b/gi,
+  /\breveal\b(?:(?!\b(?:reveal|share|send)\b)[^.!?;])*?\bsystem\s+prompt\b/gi,
+  /\bbypass\b(?:(?!\bbypass\b)[^.!?;])*?\bsecurity\b/gi,
 ]
 
+// Only an explicit negation immediately before the action makes it protective.
+// A later, unnegated action must still be checked independently.
+const protectivePrefixPattern = /\b(?:never|(?:do|does|did|should|must|can|could|will|would)\s+not|(?:don|doesn|didn|shouldn|mustn|can|couldn|wouldn)['’]t|won['’]t|cannot|avoid)\s+(?:(?:ever|please)\s+|under\s+any\s+circumstances\s+)*(?:(?:reveal|share|send)\s+(?:and|or)\s+)*$/i
+
 function inspectRequest(request: string): string[] {
-  if (dangerousPatterns.some((pattern) => pattern.test(request))) {
-    return ['The request attempts to expose secrets or bypass security controls.']
+  const normalizedRequest = request.replace(/\s+/g, ' ')
+  for (const pattern of dangerousPatterns) {
+    for (const match of normalizedRequest.matchAll(pattern)) {
+      const prefix = normalizedRequest.slice(0, match.index)
+      if (!protectivePrefixPattern.test(prefix)) {
+        return ['The request attempts to expose secrets or bypass security controls.']
+      }
+    }
   }
   return []
 }
