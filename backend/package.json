@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc && node scripts/copy-ai-assets.mjs",
     "test": "node --import tsx --test",
+    "eval:ai": "node --import tsx scripts/evaluate-ai.mjs",
     "start": "node dist/server.js"
   },
   "keywords": [],

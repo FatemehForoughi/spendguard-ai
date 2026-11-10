@@ -1,29 +1,8 @@
-# Detection Rules
-
-## Amount Analysis
-
-- Flag if amount is unusually large relative to typical retail usage
-- Flag round numbers that look like testing or structuring
-- Consider asset type (stablecoins vs volatile tokens)
-
-## Destination Analysis
-
-- Unknown / new address → increase risk
-- Address that looks like a mixer, tumbler, or high-risk service → high risk
-- Contract address without verified purpose → medium to high risk
-- Named NEAR account vs long implicit account → note the difference
-
-## Behavioral Signals
-
-- Urgency language in the request
-- Attempts to hide or obfuscate the real recipient
-- Multiple hops mentioned
-- Request to "skip checks" or "approve quickly"
-
-## Scoring Guidance
-
-- Start from a base score
-- Add points for each independent risk signal
-- Cap at 100
-- If critical signal exists (known scam address, clear social engineering), score should be ≥ 80
+# Transaction checks
+- Require amount, asset, both networks, and full recipient. Use null for missing/conflicting fields; do not merge transfers.
+- Preserve decimal precision. Zero/negative/hexadecimal/non-finite/unclear amounts require review. No invented balance, gas sufficiency, fiat value, or historical average.
+- Above 1000 token units triggers a demo warning across assets, not a USD threshold or proof of theft. Round numbers alone are normal.
+- Preserve complete recipients exactly. EVM address format does not identify a chain. NEAR account names/suffixes/implicit formats do not establish existence, ownership, reputation, or selected network. Do not claim checksum/on-chain validation.
+- Check stated mainnet/testnet mismatch. Do not invent supported bridges/routes or declare wrapped NEAR on EVM inherently invalid. Cross-chain intents may need token identity, recipient, minimum output/slippage, deadline, and refund details.
+- Transfers, approvals, and signatures differ. Review unlimited allowances, opaque payloads, and unexplained calls. Full-access NEAR keys grant broad control; function-call restrictions (receiver/methods/allowance) must be supplied, not assumed.
 
