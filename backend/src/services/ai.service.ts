@@ -5,6 +5,7 @@ import { knowledgeService } from './knowledge.service.js'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { AppError } from '../errors/app-error.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -37,7 +38,7 @@ export type ExtractedDetails = z.infer<typeof transactionDetailsSchema>
 
 function createClient(): OpenAI {
   if (!env.NEAR_AI_API_KEY) {
-    throw new Error('NEAR AI is not configured')
+    throw new AppError(503, 'AI_UNAVAILABLE', 'The analysis service is unavailable right now. Please try again shortly.')
   }
 
   return new OpenAI({
@@ -60,11 +61,11 @@ function parseCompletion(
   if (!choice?.message) return undefined
 
   if (choice.message.refusal || choice.finish_reason === 'content_filter') {
-    throw new Error('NEAR AI declined to analyze this request')
+    throw new AppError(422, 'AI_REQUEST_DECLINED', 'This request could not be analyzed. Try describing only the transaction you want to review.')
   }
   if (choice.finish_reason === 'length' || !choice.finish_reason) return undefined
   if (choice.finish_reason !== 'stop') {
-    throw new Error('NEAR AI returned an unexpected completion type')
+    throw new AppError(502, 'AI_RESPONSE_INVALID', 'We could not complete the analysis. Please try again.')
   }
 
   if (typeof choice.message.content !== 'string') return undefined
@@ -86,7 +87,7 @@ function parseCompletion(
 export async function analyzeRisk(request: string): Promise<Analysis> {
   const model = env.NEAR_AI_MODEL
   if (!model) {
-    throw new Error('NEAR AI is not configured')
+    throw new AppError(503, 'AI_UNAVAILABLE', 'The analysis service is unavailable right now. Please try again shortly.')
   }
 
   const client = createClient()
@@ -121,5 +122,5 @@ export async function analyzeRisk(request: string): Promise<Analysis> {
     if (analysis) return analysis
   }
 
-  throw new Error('NEAR AI did not return a complete, valid analysis')
+  throw new AppError(502, 'AI_RESPONSE_INVALID', 'We could not complete the analysis. Please try again.')
 }

@@ -831,6 +831,42 @@ button {
 
 .risk-modal-disclaimer { margin: 13px 0 0; color: #77849a; font-size: 10px; line-height: 1.6; text-align: center; }
 
+.error-notification {
+  position: fixed;
+  top: 20px;
+  right: 16px;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid #854553;
+  border-radius: 13px;
+  background: #281c29;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+}
+
+.error-notification-icon { flex: 0 0 auto; color: #ff8585; }
+.error-notification-content { flex: 1; min-width: 0; }
+.error-notification h2 { margin: 0 0 7px; font-size: 14px; }
+.error-notification p { margin: 0; color: #dfcad0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.error-notification-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+  padding: 7px 11px;
+  border: 1px solid #a76170;
+  border-radius: 7px;
+  background: #492935;
+  color: #fff0f3;
+  font-size: 12px;
+}
+.error-notification-retry:disabled { opacity: .5; cursor: not-allowed; }
+.error-notification-close { display: grid; place-items: center; padding: 3px; border: 0; background: transparent; color: #dfcad0; }
+.error-notification button:focus-visible { outline: 2px solid #ffadb6; outline-offset: 3px; }
+
 @media (max-width: 520px) {
   .risk-modal { padding: 24px 18px; }
   .risk-modal-heading h2 { font-size: 16px; }

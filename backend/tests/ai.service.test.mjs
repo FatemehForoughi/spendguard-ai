@@ -24,6 +24,7 @@ mock.method(globalThis, 'fetch', async (url, options) => {
 const { analyzeRisk } = await import('../src/services/ai.service.ts')
 const { analyzeTransactionController } = await import('../src/controllers/transaction.controller.ts')
 const { TransactionModel } = await import('../src/models/transaction.model.ts')
+const { errorHandler } = await import('../src/middleware/error-handler.ts')
 const saveMock = mock.method(TransactionModel, 'create', async () => {
   return { _id: { toString: () => 'test-analysis-id' } }
 })
@@ -110,19 +111,19 @@ for (const [description, invalidCompletion] of invalidCompletions) {
 
 test('a refused response stops without a recovery attempt', async () => {
   responses.push(completion(validAnalysis, 'stop', { refusal: 'Provider refusal.' }))
-  await assert.rejects(analyzeRisk(request), /declined to analyze/)
+  await assert.rejects(analyzeRisk(request), (error) => error.code === 'AI_REQUEST_DECLINED')
   assert.equal(requests.length, 1)
 })
 
 test('a filtered response stops without a recovery attempt', async () => {
   responses.push(completion(null, 'content_filter'))
-  await assert.rejects(analyzeRisk(request), /declined to analyze/)
+  await assert.rejects(analyzeRisk(request), (error) => error.code === 'AI_REQUEST_DECLINED')
   assert.equal(requests.length, 1)
 })
 
 test('an unexpected completion type is rejected', async () => {
   responses.push(completion(validAnalysis, 'tool_calls'))
-  await assert.rejects(analyzeRisk(request), /unexpected completion type/)
+  await assert.rejects(analyzeRisk(request), (error) => error.code === 'AI_RESPONSE_INVALID')
   assert.equal(requests.length, 1)
 })
 
@@ -140,11 +141,13 @@ test('repeated invalid responses stop after two attempts without saving an analy
     status(code) { this.code = code; return this },
     json(body) { this.body = body; return this },
   }
-  await analyzeTransactionController({ body: { request } }, response)
+  const req = { body: { request } }
+  await analyzeTransactionController(req, response, (error) => errorHandler(error, req, response, () => {}))
   assert.equal(requests.length, 2)
   assert.equal(saveMock.mock.callCount(), savesBefore)
   assert.equal(response.code, 502)
   assert.equal(response.body.success, false)
+  assert.equal(response.body.code, 'AI_RESPONSE_INVALID')
   assert.equal(response.body.data, undefined)
 })
 
@@ -156,4 +159,20 @@ test('the analysis deadline prevents another attempt', async (t) => {
   responses.push(truncated)
   await assert.rejects(analyzeRisk(request), /abort|deadline/i)
   assert.equal(requests.length, 1)
+})
+
+test('a failed save returns a specific user message rather than an AI failure', async (t) => {
+  responses.push(completion())
+  t.mock.method(console, 'error', () => {})
+  t.mock.method(TransactionModel, 'create', async () => { throw new Error('internal database details') })
+  const req = { body: { request } }
+  const response = {
+    status(code) { this.code = code; return this },
+    json(body) { this.body = body; return this },
+  }
+  await analyzeTransactionController(req, response, (error) => errorHandler(error, req, response, () => {}))
+  assert.equal(response.code, 503)
+  assert.equal(response.body.code, 'ANALYSIS_SAVE_FAILED')
+  assert.match(response.body.message, /could not be saved/)
+  assert.doesNotMatch(JSON.stringify(response.body), /internal database details/)
 })

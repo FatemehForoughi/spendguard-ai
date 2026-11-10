@@ -1,17 +1,17 @@
 import type { TransactionAnalysis, TransactionHistoryResponse, TransactionRecord } from '../types/transaction'
+import { ApiError, requestJson } from './http'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
-interface AnalyzeResponse {
+interface ApiResponse<T> {
   success: boolean
-  data?: TransactionAnalysis
-  message?: string
+  data?: T
 }
 
 export async function analyzeTransaction(
   request: string
 ): Promise<TransactionAnalysis> {
-  const response = await fetch(`${API_BASE_URL}/api/transactions/analyze`, {
+  const result = await requestJson<ApiResponse<TransactionAnalysis>>(`${API_BASE_URL}/api/transactions/analyze`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -19,10 +19,8 @@ export async function analyzeTransaction(
     body: JSON.stringify({ request })
   })
 
-  const result = await response.json() as AnalyzeResponse
-
-  if (!response.ok || !result.success || !result.data) {
-    throw new Error(result.message || 'Transaction analysis failed')
+  if (!result.data) {
+    throw new ApiError('We could not read the analysis result. Please try again.', 'INVALID_RESPONSE')
   }
 
   return result.data
@@ -32,16 +30,12 @@ export async function getTransactions(
   page = 1,
   limit = 10,
 ): Promise<TransactionHistoryResponse> {
-  const response = await fetch(
+  const result = await requestJson<TransactionHistoryResponse>(
     `${API_BASE_URL}/api/transactions?page=${page}&limit=${limit}`
   )
 
-  const result = await response.json()
-
-  if (!response.ok || !result.success) {
-    throw new Error(
-      result.message || 'Failed to fetch transactions'
-    )
+  if (!Array.isArray(result.data) || !result.pagination) {
+    throw new ApiError('We could not read your transaction history. Please try again.', 'INVALID_RESPONSE')
   }
 
   return result
@@ -50,16 +44,12 @@ export async function getTransactions(
 export async function getTransactionById(
   id: string,
 ): Promise<TransactionRecord> {
-  const response = await fetch(
+  const result = await requestJson<ApiResponse<TransactionRecord>>(
     `${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}`
   )
 
-  const result = await response.json()
-
-  if (!response.ok || !result.success) {
-    throw new Error(
-      result.message || 'Failed to fetch transaction details'
-    )
+  if (!result.data) {
+    throw new ApiError('We could not read the transaction details. Please try again.', 'INVALID_RESPONSE')
   }
 
   return result.data

@@ -3,6 +3,8 @@ import express from 'express'
 import cors from 'cors'
 import { env } from './config/env.js'
 import transactionRoutes from './routes/transaction.routes.js'
+import { AppError } from './errors/app-error.js'
+import { errorHandler } from './middleware/error-handler.js'
 
 const app = express()
 
@@ -21,5 +23,11 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.use('/api/transactions', transactionRoutes)
+
+app.use((_req, _res, next) => {
+  next(new AppError(404, 'NOT_FOUND', 'The requested information could not be found.'))
+})
+
+app.use(errorHandler)
 
 export default app

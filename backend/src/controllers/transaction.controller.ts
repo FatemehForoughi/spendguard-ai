@@ -1,19 +1,24 @@
-import type { Request, Response } from 'express'
+import type { NextFunction, Request, Response } from 'express'
 import { transactionRequestSchema } from '../validators/transaction.validator.js'
 import { analyzeTransaction } from '../services/policy.service.js'
 import { TransactionModel } from '../models/transaction.model.js'
 import mongoose from 'mongoose'
+import { AppError } from '../errors/app-error.js'
 
 export async function analyzeTransactionController(
   req: Request,
   res: Response,
+  next: NextFunction,
 ) {
   const validation = transactionRequestSchema.safeParse(req.body)
 
   if (!validation.success) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid transaction request',
+      code: 'INVALID_TRANSACTION_REQUEST',
+      message: typeof req.body?.request === 'string'
+        ? validation.error.issues[0]?.message
+        : 'Please enter a transaction description of up to 1,000 characters.',
       errors: validation.error.flatten(),
     })
   }
@@ -26,18 +31,14 @@ export async function analyzeTransactionController(
       data: result,
     })
   } catch (error) {
-    console.error('Transaction analysis failed:', error)
-
-    return res.status(502).json({
-      success: false,
-      message: 'Transaction analysis is temporarily unavailable.',
-    })
+    return next(error)
   }
 }
 
 export async function getTransactionsController(
   req: Request,
   res: Response,
+  next: NextFunction,
 ) {
   try {
     const page = Number(req.query.page ?? 1)
@@ -52,7 +53,8 @@ export async function getTransactionsController(
     ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid pagination parameters.',
+        code: 'INVALID_PAGINATION',
+        message: 'Please choose a valid page and a page size between 1 and 100.',
         errors: {
           page: 'Page must be a positive integer.',
           limit: 'Limit must be between 1 and 100.',
@@ -85,18 +87,14 @@ export async function getTransactionsController(
       },
     })
   } catch (error) {
-    console.error('Fetching transactions failed:', error)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Could not fetch transaction history.',
-    })
+    return next(new AppError(503, 'HISTORY_UNAVAILABLE', 'Transaction history is unavailable right now. Please try again.', { cause: error }))
   }
 }
 
 export async function getTransactionByIdController(
   req: Request,
   res: Response,
+  next: NextFunction,
 ) {
   try {
     const { id } = req.params
@@ -104,7 +102,8 @@ export async function getTransactionByIdController(
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid transaction ID.',
+        code: 'INVALID_TRANSACTION_ID',
+        message: 'That transaction link is invalid. Please open a transaction from your history.',
       })
     }
 
@@ -113,7 +112,8 @@ export async function getTransactionByIdController(
     if (!transaction) {
       return res.status(404).json({
         success: false,
-        message: 'Transaction analysis not found.',
+        code: 'TRANSACTION_NOT_FOUND',
+        message: 'That transaction could not be found. It may no longer be available.',
       })
     }
 
@@ -122,11 +122,6 @@ export async function getTransactionByIdController(
       data: transaction,
     })
   } catch (error) {
-    console.error('Fetching transaction failed:', error)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Could not fetch transaction details.',
-    })
+    return next(new AppError(503, 'TRANSACTION_UNAVAILABLE', 'Transaction details are unavailable right now. Please try again.', { cause: error }))
   }
 }

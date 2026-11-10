@@ -2,12 +2,14 @@
 import { ref } from 'vue'
 import { ShieldCheck, Wallet, Activity, AlertTriangle, ArrowUpRight, LoaderCircle } from 'lucide-vue-next'
 import TransactionReview from '../components/TransactionReview.vue'
+import ErrorNotification from '../components/ErrorNotification.vue'
 import { analyzeTransaction as analyzeTransactionApi } from '../services/transaction.api'
 import type { TransactionAnalysis } from '../types/transaction'
 
 const requestText = ref('')
 const analysis = ref<TransactionAnalysis | null>(null)
 const isAnalyzing = ref(false)
+const errorMessage = ref<string | null>(null)
 
 const stats = [
   { label: 'Transactions Checked', value: '0', icon: Activity },
@@ -20,12 +22,13 @@ async function analyzeTransaction() {
 
   isAnalyzing.value = true
   analysis.value = null
+  errorMessage.value = null
 
   try {
     analysis.value = await analyzeTransactionApi(requestText.value.trim())
   } catch (error) {
-    console.error('Analysis error:', error)
-    alert(error instanceof Error ? error.message : 'Could not analyze transaction')
+    errorMessage.value = error instanceof Error
+      ? error.message : 'We could not analyze this transaction. Please try again.'
   } finally {
     isAnalyzing.value = false
   }
@@ -109,6 +112,14 @@ function resetAnalysis() {
       v-if="analysis"
       :analysis="analysis"
       @reset="resetAnalysis"
+    />
+
+    <ErrorNotification
+      v-if="errorMessage"
+      :message="errorMessage"
+      :retrying="isAnalyzing"
+      @dismiss="errorMessage = null"
+      @retry="analyzeTransaction"
     />
   </div>
 </template>

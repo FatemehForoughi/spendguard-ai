@@ -7,6 +7,7 @@ import type {
 import { analyzeRisk } from './ai.service.js'
 import type { Analysis } from './ai.service.js'
 import { TransactionModel } from '../models/transaction.model.js'
+import { AppError } from '../errors/app-error.js'
 
 const HIGH_VALUE_THRESHOLD = 1000
 
@@ -23,17 +24,21 @@ function stricterStatus(first: RiskStatus, second: RiskStatus): RiskStatus {
 async function saveAnalysis(
   analysis: TransactionAnalysis
 ): Promise<TransactionAnalysis> {
-  const saved = await TransactionModel.create({
-    analysisId: analysis.id,
-    request: analysis.request,
-    status: analysis.status,
-    score: analysis.score,
-    message: analysis.message,
-    reasons: analysis.reasons,
-    details: analysis.details,
-  })
+  try {
+    const saved = await TransactionModel.create({
+      analysisId: analysis.id,
+      request: analysis.request,
+      status: analysis.status,
+      score: analysis.score,
+      message: analysis.message,
+      reasons: analysis.reasons,
+      details: analysis.details,
+    })
 
-  return { ...analysis, id: saved._id.toString() }
+    return { ...analysis, id: saved._id.toString() }
+  } catch (error) {
+    throw new AppError(503, 'ANALYSIS_SAVE_FAILED', 'The analysis could not be saved. Please try again.', { cause: error })
+  }
 }
 
 const dangerousPatterns = [
