@@ -59,7 +59,7 @@ export async function analyzeRisk(request: string): Promise<Analysis> {
 
   const client = createClient()
   const systemPrompt = loadPrompt()
-  const knowledge = knowledgeService.getCombinedPrompt().slice(0, 4000)
+  const knowledge = knowledgeService.getCombinedPrompt()
 
   const completion = await client.chat.completions.create({
     model,

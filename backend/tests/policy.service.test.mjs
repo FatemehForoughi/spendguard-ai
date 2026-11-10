@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync, readdirSync } from 'node:fs'
 import { after, mock, test } from 'node:test'
 
 process.env.NEAR_AI_API_KEY = 'test-key'
@@ -8,9 +9,11 @@ process.env.NODE_ENV = 'test'
 
 let aiResult
 let savedAnalysis
+let aiRequest
 
-mock.method(globalThis, 'fetch', async (url) => {
+mock.method(globalThis, 'fetch', async (url, options) => {
   assert.equal(String(url), 'https://ai.test.invalid/v1/chat/completions')
+  aiRequest = JSON.parse(options.body)
   return new Response(JSON.stringify({
     choices: [{
       message: { content: JSON.stringify(aiResult) },
@@ -107,4 +110,19 @@ test('ALLOW retains the AI explanation and recommendation', async () => {
   assert.equal(result.status, 'ALLOW')
   assert.equal(result.score, 10)
   assert.equal(result.message, `${baseAnalysis.message} ${baseAnalysis.recommendation}`)
+})
+
+test('AI request includes every security knowledge file in full', async () => {
+  await analyze()
+  const systemMessage = aiRequest.messages.find((message) => message.role === 'system')
+  assert.ok(systemMessage, 'The AI request must include a system message')
+
+  const knowledgeDirectory = new URL('../src/ai-knowledge/', import.meta.url)
+  const files = readdirSync(knowledgeDirectory).filter((file) => file.endsWith('.md'))
+  assert.ok(files.length > 0, 'Security knowledge files must exist')
+  for (const file of files) {
+    const content = readFileSync(new URL(file, knowledgeDirectory), 'utf-8').trim()
+    assert.ok(content.length > 0, `${file} must contain security knowledge`)
+    assert.ok(systemMessage.content.includes(content), `${file} must be sent in full`)
+  }
 })
