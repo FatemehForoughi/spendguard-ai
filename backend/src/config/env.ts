@@ -29,6 +29,27 @@ const envSchema = z.object({
 
   NEAR_AI_MODEL: optionalString,
 
+  AGENTS_ON_INTENTS_PARTNER_API_KEY: z.preprocess(
+    (value) => typeof value === 'string' ? value.trim() || undefined : value,
+    z.string().regex(/^[\x21-\x7e]+$/, 'The partner API key must be a single ASCII token.').optional(),
+  ),
+
+  AGENTS_ON_INTENTS_BASE_URL: z
+    .string()
+    .url()
+    .default('https://api.agentsonintents.com')
+    .refine((value) => {
+      try {
+        const url = new URL(value)
+        return url.protocol === 'https:' && !url.username && !url.password &&
+          url.pathname === '/' && !url.search && !url.hash
+      } catch {
+        return false
+      }
+    }, 'The Agents on Intents base URL must be an HTTPS origin without credentials, a path, query, or fragment.'),
+
+  AGENTS_ON_INTENTS_TIMEOUT_MS: z.coerce.number().int().min(1).max(120_000).default(35_000),
+
   MONGODB_URI: optionalString,
 })
 
