@@ -1,0 +1,169 @@
+# NEAR Intents Agent API
+
+> Backend HTTP API for AI agents that trade on NEAR Intents under an owner-signed policy. No SDK is needed: every call is plain JSON over HTTPS.
+
+Full schemas: https://api.agentsonintents.com/openapi.json (OpenAPI 3.1, generated from the same registry as this file).
+
+## Conventions
+
+- Authenticate with the `X-API-Key: naa_…` header. The key belongs to a partner backend; never send it to a browser.
+- Every JSON field, query parameter, path parameter and error code is snake_case. Wallet payloads (`intent.payload`) keep their wallet standard's field names; send them back byte-for-byte.
+- Execution amounts and balance_raw are atomic integer strings. Balance entries use asset_id and token metadata; balance is an exact token-unit decimal string, or null if decimals are unknown. available_raw and available are the part of the balance a new request can spend, less queued or timelocked work not yet dispatched. Dispatched work leaves balance_raw when the provider's balance reflects it, a few seconds after dispatch. A request for all of available_raw sent in that window passes the API's balance check, is recorded and dispatched, and then fails at the provider; wait for balance_raw to drop before spending what remains.
+- Lists return `{ data, next_cursor }`; pass `cursor=<next_cursor>` for the next page.
+- Writes that create work take an `Idempotency-Key` header (8–128 chars of `A-Za-z0-9._:-`). Retry with the same key and body; never reuse a key for new work.
+- Errors are JSON:API documents: `{ errors: [{ status, code, layer, title, detail?, source?: { pointer }, meta?: { retryable, available_at? } }], meta: { request_id } }`. Branch on `errors[0].code`, never on `title`. `layer` names whose rule refused: `request` (shape, ids, assets, addresses, amount minimums, idempotency), `auth` (API key, owner signature, nonce, intent), `grant`, `policy` (the account policy and its state), `budget` (the USD budget and its price), `balance`, `provider` (custody provider, 1Click, routes) or `api` (this service: internal, database, sponsor, RPC, rate limits). `meta.retryable: true` means: send the identical request with the same Idempotency-Key after `Retry-After`. It is set on throttles and outages and on server failures (`internal_error`, `database_busy`, `transaction_unconfirmed`, `transparency_unavailable`), whose request may have taken effect: only its own key can replay or reconcile it. Its absence says only that repeating will not help now; it says nothing about whether an earlier attempt took effect. Use a new key only for a proven refusal: a code documented as refusing this request before anything was sent (policy, grant, validation, budget, `wallet_busy`, ...), whose key replays it. A `provider_rate_limited` without `meta.retryable` is one: the provider's rate limiter refused before anything ran and the refusal is recorded, so send the work again under a new key after `Retry-After`. A FAILED or REFUNDED status is not that proof: review its details and balances before deciding to send new work. After a server failure, a lost response (timeout, network error), status UNCERTAIN, or a code about earlier work under the key (`intent_generation_recovery_required`, `operation_not_recoverable`, `operation_not_pending`, any error from /recover), keep the original key and correlation_id and read status; never retry under a new key. Never decide from `detail`. `source.pointer` names the field a refusal is about, continuing into a signed message's JSON (`owner_mismatch` at `/signed_data/payload/message/network`); show its `detail` to the person signing.
+
+## Owner actions: generate → sign → submit → status
+
+Anything that needs the owner's wallet (creating an agent, changing its policy, grants, freeze, delete, approval votes, …) is one owner intent:
+
+1. `POST /v1/generate-intent` with `{ type, ...fields }`. The response has `correlation_id`, `signer` (the wallet that must sign), `intent: { standard, payload }`, a human-readable `preview` and `expires_at`. Store `correlation_id`.
+2. The owner's wallet signs `intent.payload` unchanged, according to `intent.standard`:
+   - `nep413` (NEAR message): `wallet.signMessage({ message, recipient, nonce })` with `nonce` base64-decoded to 32 bytes. signed_data: `{ standard, payload, public_key, signature }`.
+   - `nep366` (NEAR delegate action): `wallet.signDelegateActions({ delegateActions: [payload] })`. signed_data: `{ standard, payload, signed_delegate }` (base64 borsh SignedDelegate).
+   - `eip712` (EVM typed data): `signTypedData({ account, ...payload })`. signed_data: `{ standard, payload, signature }` (0x, 65 bytes).
+   - `webauthn` (passkey): `startAuthentication({ optionsJSON: payload })`. signed_data: `{ standard, payload, credential }` (AuthenticationResponseJSON).
+3. `POST /v1/submit-intent` with `{ type, correlation_id, signed_data }`. Resubmitting the same signature is safe.
+4. `GET /v1/status?correlation_id=…&wait_ms=30000` until the status is terminal.
+
+## The policy
+
+Creation and every policy update sign one complete policy: `{ frozen, actions, confidential, owner_approval, assets, limits, max_actions_per_hour, destinations, budget, timelock_ms, schedule?, native? }`.
+
+- `actions`: any of `swap`, `transfer`, `withdraw`. Deposits need no action but are refused while the account is frozen; deletion is the owner's own action.
+- `confidential`: allows shield and unshield and the confidential form of every allowed action. The confidential balance, and the transfers and swaps made from it, live on `intents.far`, the NEAR Intents confidential deployment on FAR: a permissioned NEAR-protocol chain run by a small validator set with no public RPC. That keeps them off the public NEAR chain. It is access control, not cryptography, and the API cannot prove it: FAR's operators and Defuse can read confidential state and grant others access, the 1Click solver layer sees each intent in plaintext, shielding and unshielding appear on the public chain, cross-chain deposits and withdrawals are public on their own chains and can be matched by amount and timing, and the agent has one confidential identity, its custody wallet.
+- `owner_approval`: outgoing money actions (not deposits) wait for the owner's approval vote (`approval_vote` intent, sent to the wallet provider: no gas, no sponsor). NEAR, passkey and (where the deployment enables EVM owners) EVM owners can all vote. A held request stays charged against the USD budget; a `reject` ends it and releases the charge once the API observes it (`FAILED` with `details.never_executed`). An `approve` releases it to run, so the API re-runs its dispatch fence first and refuses with `authorization_stale` (the admitting grant was revoked or expired, or the policy changed), `wallet_frozen` or `policy_destination_denied`; nothing reaches the provider and the request stays held for the owner's `reject`. An `approve` for a request the API has not yet recorded under its approval is refused with `approval_not_recorded`: send the same vote again a few minutes later.
+- `assets`: `"any"` or the exact `asset_id` values the agent may spend (a swap may buy an unlisted asset but not sell or move it). `limits`: `{ per_transaction?, hourly?, daily?, monthly? }`, each a map of `asset_id` to an atomic amount. `max_actions_per_hour`: integer or null.
+- `destinations`: `{ mode: 'only' | 'except' | 'any', list }`. Entries are `{ action: 'withdraw', chain, address, memo }` (memo null for none) or `{ action: 'transfer', address, confidential }` (a NEAR Intents account). `only` needs the exact entry, memo included; `except` blocks the account under any memo. A new account usually starts with `only` and an empty list, so funds stay inside it. `except` is best-effort: it does not match another encoding of the same account (TON, XRP X-address, Stellar M-address, Tron hex, BCH legacy) and cannot stop a payment through an intermediary; use `only` when it matters who receives.
+- `budget`: `{ daily_usd, weekly_usd, monthly_usd }`, USD strings or null for uncapped, per day, week and month, each counted from the moment that cap was turned on (a month keeps the start's date and time, clamped to shorter months).
+- `timelock_ms`: every money action except deposits waits this many milliseconds before it runs (0 to 30 days).
+- `schedule` (optional; omitted = any time): `{ mode: 'only' | 'except', time_zone, windows: [{ days, start, end }] }`. `days` from `mon`…`sun`; `start` and `end` are local `HH:MM` (`end` may be `24:00`), start inclusive, end exclusive; an `end` earlier than `start` runs past midnight and belongs to the start day. `time_zone` is IANA (`Europe/Berlin`, `UTC`) and follows daylight saving. `only` allows money actions inside the windows, `except` pauses them there. A money action is judged when it would run: a new request after `timelock_ms`, a timelocked one again at release. Outside the schedule it is refused with `policy_schedule_denied` and `meta.available_at`, the earliest time to submit again; a timelocked one that comes due outside fails with that code, and so does one whose window closes just before dispatch; nothing reaches the provider. A retry with the same Idempotency-Key returns the original operation, even after the window closes. Deposits and `native` requests ignore the schedule; the owner's approval vote is the owner's own decision and is not checked.
+- `native` (optional; omitted = all off): the agent's own NEAR, EVM and Solana keys outside NEAR Intents. When present, every key is required: `{ near: { sign_message: [recipients], transfer: bool, call: [contracts] }, evm: { sign_typed_data: [domains], sign_message: bool, sign_transaction: bool }, solana: { sign_message, sign_transaction } }`. Each switch opens one route under POST /v1/agents/{agent_id}/native/…: `near/sign-message` (NEP-413 `signMessage`: `{ message, recipient, nonce }` with the relying party's base64 32-byte nonce, for a recipient in `near.sign_message`, a NEAR account or domain; answers `near_account_id`, `public_key` and a base64 `signature`; `callbackUrl` is not supported), `near/transfer` and `near/call` (Idempotency-Key; `call` only to a contract in `near.call`), `evm/sign-typed-data` (only under an EIP-712 domain listed in `evm.sign_typed_data`, as `{ name?, version?, chain_id?, verifying_contract?, salt?, primary_types? }` with the domain fields matched field for field; `types.EIP712Domain`, if sent, declares exactly those fields in EIP-712 order with standard types, so Hyperliquid's `Exchange` domain never signs a `HyperliquidSignTransaction` withdrawal. `primary_types` (1 to 32 unique type names) limits which message types are signed under that domain, e.g. `["HyperliquidTransaction:Withdraw"]` refuses `HyperliquidTransaction:SpotSend` and `UsdSend` there; omitted allows any type. It narrows the kind of message, never its fields: destination and amount are not checked), `evm/sign-message`, `evm/sign-transaction` (`chain`: ethereum, polygon, base, arbitrum, optimism, bsc, avalanche, hyperevm or hood; one address on all of them), `solana/sign-message` and `solana/sign-transaction`. `evm/sign-transaction` takes only one serialized unsigned EIP-2718 or EIP-155 transaction whose chain id is `chain`'s, and `solana/sign-transaction` only one legacy or v0 transaction message (`validation_failed` otherwise), so neither signs a message. Signing routes return the signature and never broadcast; the caller sends it. Addresses are `wallet.near_account_id`, `wallet.evm_account_id` and `wallet.solana_account_id` on the agent. The NEAR Intents contracts (`intents.near`, `intents.far`) can never be listed or targeted. None of `destinations`, `budget`, `timelock_ms`, `schedule` or `owner_approval` applies to native requests: the switch is the whole fence, so a native NEAR transfer can go anywhere and a typed-data signature can approve or move everything at the EVM address. The wallet provider still treats native NEAR as wNEAR: a native transfer or call deposit needs `assets` to allow `nep141:wrap.near` (or be `any`) and stays within its `limits`. Every request is recorded as status type `native`; a typed-data signature also records `details.domain` (the matched domain) and `details.message_json` (the signed message as canonical JSON, at most 65536 bytes or the request is refused). Freezing the account stops them all.
+
+Changing only `destinations`, `budget`, `timelock_ms` or `schedule` needs no blockchain transaction: its revision applies with `transaction_hash: null`. `preview.policy` contains the complete proposal. Read `GET /v1/agents/{agent_id}/policy` first and pass its `revision` as `expected_revision`; on `policy_revision_conflict`, read again and generate a new intent.
+
+Intent types and their fields (`?` = optional):
+
+- agent_create: name, external_user_id?, owner, policy
+- policy_update: agent_id, policy, expected_revision
+- agent_freeze: agent_id
+- agent_unfreeze: agent_id
+- grant_issue: agent_id, label, credential, expires_at
+- grant_revoke: agent_id, grant_id
+- execution_cancel: agent_id, correlation_id
+- agent_archive: agent_id
+- agent_restore: agent_id
+- agent_delete: agent_id
+- approval_vote: agent_id, approval_id, verdict
+
+## Agent actions
+
+Swaps, withdrawals and transfers need no owner signature at call time, only `X-Grant-Token` for an active owner grant. Create the token on your backend (`createGrantCredential()` in the SDK), put its `commitment` and a `label` in `grant_issue`, and keep the token: one grant per user session, assistant or bot, each revocable on its own. The API key only identifies you. A grant says who may act, nothing more: what any grantee may do and where funds may go is the account policy, shared by every grant. Adding a destination is one `policy_update`; every grant can use it at once, with no new grant. Each execution returns a status with a `correlation_id`; track it with `GET /v1/status`. Swap quotes (`dry: true`) need only an API key. Withdrawal previews require both a live grant and an explicit Idempotency-Key, including with SDK 0.5.1. Identical previews reuse a result for 60 seconds. Expired previews need a new key. The API sets no preview cap; each preview counts toward the wallet's 1,000 custody operations per rolling 24 hours (`provider_limit_reached`). An archived, deleted or frozen account, or one whose applied policy does not parse, gets no swap quote or withdrawal preview (`agent_archived`, `agent_deleted`, `wallet_frozen`, `policy_not_ready`), and an asset `GET /v1/tokens` does not list (`unsupported_token`) or a recipient that is not a valid address (`invalid_address`) is refused with 400 before any provider call, as the live request is. The account's rules never refuse one: each the live request would fail (the policy's action switch and destination rule, assets, schedule, USD budget, per-asset limits and max_actions_per_hour, `policy_usage_unavailable` when unreconciled history keeps the limits from being judged, or `insufficient_balance` with `available_amount`) is listed in `warnings` under the live request's code, and only the live request is refused. A dry answer is `{ dry, type, quote, spend: { amount_usd, budget }, fee, warnings }`: `spend.budget` is each window's cap, spend and `resets_at` before this request; `fee` is `{ amount_usd, percent }` or null (a swap compares input and quoted output at current prices; a withdrawal on chain `near` from the provider's estimate when stated in the withdrawn asset, otherwise from `amount` minus `quote.amount_out`; a confidential bridged withdrawal from `amount` minus `quote.amount_out` valued in the asset of the same symbol 1Click lists on that chain; null for a public bridged withdrawal, when the quote states no `amount_out`, when the chain lists no single asset of that symbol, when either asset has no fresh price, or when the delivery is worth more than `amount`); `warnings` lists those refusals (`policy_schedule_denied` adds `available_at`, `insufficient_balance` adds `available_amount`), `high_fee` (above 5%, only where `fee` is valued) and `asset_delivered_as_is` (a non-USDC asset withdrawn to `hypercore` lands in HyperCore spot, not USDC margin). A preview without a rule warning is a snapshot, not a reservation: other work can use the budget first.
+Every amount that moves funds must be greater than zero, and a swap's two assets must differ (`validation_failed`). A transfer `recipient`, and a withdrawal recipient on chain `near`, must be a valid NEAR account id, and a named one must exist on NEAR (`invalid_address`, 400): NEAR Intents credits any id, so funds sent to an unregistered name are lost. Implicit ids (64 hex, or `0x` + 40 lowercase hex) need no account; any other `0x` id is refused. `near_rpc_unavailable` (503, retryable) means the check could not run; nothing was sent. Before anything is recorded or charged, an asset GET /v1/tokens does not list is `unsupported_token` (400) and an amount above the balance it spends from (public, or confidential) is `insufficient_balance` (400, `meta.available_amount` = what that balance holds, atomic units); neither is retryable, and neither leaves a history row.
+Rolling per-asset caps and max_actions_per_hour are reserved atomically across all grants and API processes before dispatch, even without a USD budget. Public and confidential actions share the counters. Pending and uncertain writes remain reserved until authenticated settlement; a confirmed completion remains counted for the full rolling window from observation. Proven non-execution releases its reservation. Clearing limits never clears usage. Older executions without reservation evidence fail closed with policy_usage_unavailable while they could affect the cap.
+
+Withdrawing NEAR (`nep141:wrap.near`, or `near`) to chain `near` delivers native NEAR, from the public or the confidential balance alike, like a NEAR wallet or 1Click; the recipient needs no `wrap.near` registration. There is no option to withdraw wNEAR to chain `near`.
+
+Creating a public or confidential deposit address with POST /v1/agents/{agent_id}/deposit needs an API key and Idempotency-Key, but no X-Grant-Token or owner signature. It does not spend agent funds, consume USD budget or wait for the execution delay. `origin_asset` is required: the exact `asset_id` from GET /v1/tokens of the token being sent (it fixes both chain and token). `amount` is optional: without it any payment at or above `details.min_amount` before `details.expires_at` is credited. Include `details.memo` when present. A failed or late deposit refunds into the agent's own balance (`details.refund_to`); there is no refund address to pass. Funds go only to `details.deposit_address`; if it is missing, send nothing. `correlation_id` is a tracking id, never an address: execution ids start with `op_`, owner intent ids with `intent_`.
+
+Before acting, or after `route_unavailable` or `provider_unavailable`, read GET /v1/network (public). `status.components` reports `one_click` (quotes and routing: swap, withdraw, deposit), `custody` (the agent wallet service: every execution, owner intent and balance read) and `near` (owner intents and public balance reads) as operational, degraded, down or unknown, with a short `reason` and the `affects` list. It is advisory and about a minute old at most; when a component you need is down, wait and retry later instead of changing the request.
+
+## One account, shared rules
+
+Deployment defaults (environment-configurable): 100 retained agent admissions per rolling 24 hours across all API keys and 100 deposit addresses per agent per rolling 24 hours; 10 unrevoked keys and 100 key creations per rolling 24 hours, revoked keys included; 10 concurrent status waits per key (extra reads answer at once). Failure/deletion does not refund admissions. Ordinary policy edits have a 10-minute per-agent cooldown. Pure freeze bypasses it, unfreeze has an independent 10-minute cooldown. Agent and current policy views expose cooldowns.policy_change_available_at and cooldowns.unfreeze_available_at. HTTP 429 agent_creation_quota_exceeded, deposit_quota_exceeded, policy_change_throttled and agent_unfreeze_throttled include errors[].meta.available_at, meta.retryable and Retry-After.
+An agent is one agent account. Access belongs to a grant; limits and counted usage belong to the account. Every spending operation needs a live grant (who may act) and must pass the account's policy, its USD budget and its execution delay; none overrides or adds allowance to another. An action the policy turns off fails with `policy_action_denied` for every grant, an asset outside its `assets` (for a swap, the one it sells) with `policy_asset_denied`, a destination outside the policy rule with `policy_destination_denied`, an amount above its per-transaction limit with `policy_transaction_limit_exceeded`, and a larger USD budget never lifts a per-asset limit (`policy_limit_exceeded`): ask the owner to change the rule that refused. A signed policy revision is in force only once `GET /v1/agents/{agent_id}/policy` shows `APPLIED` with `provider_policy_synced: true`; until then executions fail with `policy_not_ready`. The same response reports active counters in `usage.budget` and `usage.timelock.scheduled_count`; list the executions it holds with `GET /v1/agents/{agent_id}/executions/scheduled`, following `next_cursor`.
+
+## Spending budget
+
+One account budget is shared by humans, agents, scripts and all grants. A new amount keeps the current period and its usage; turning a cap off and on again starts a new period. Swaps, withdrawals and transfers count at their USD value when they dispatch, priced from a quote under 10 minutes old whose decimals match the wallet's (the same rule `GET /v1/tokens` applies: `price` is null otherwise, and unusable after `price_expires_at`); shield, unshield and deposits do not. `usage.budget` shows each active cap, what is charged (including work whose outcome is still uncertain) and what remains; an uncapped window counts nothing, so all its fields are null. Each cap's periods run from the moment it was turned on (a daily cap turned on at 05:00 resets at 05:00): `resets_at` is when the current period ends and the whole cap is back. Moving funds to your own account on another chain or venue counts like any withdrawal, and a return deposit does not credit it back. An execution over the remaining budget fails with `spend_budget_exceeded` (403); one for an asset with no current price fails with `spend_price_unavailable` (503). Neither reaches the provider, and replaying its Idempotency-Key returns that refusal, so once budget frees up send a new key for a new attempt. Never send a new key for an operation that is uncertain or already dispatched; read its status instead.
+
+## Status values
+
+`PENDING_SIGNATURE`, `QUEUED`, `PENDING_APPROVAL`, `PENDING_DEPOSIT`, `PROCESSING`, `SUCCESS`, `REFUNDED`, `FAILED`, `UNCERTAIN`, `NEEDS_REVIEW`. Terminal: `SUCCESS`, `REFUNDED`, `FAILED`.
+
+`PROCESSING` covers everything in flight after submission, including a withdrawal's bridge leg waiting on 1Click (`details.provider_status` keeps the provider's own state). `PENDING_DEPOSIT` appears only for deposits: an address waiting for the payer's funds. `UNCERTAIN` means the outcome is not yet proven: keep polling the same correlation_id and never resubmit under a new Idempotency-Key. `UNCERTAIN` with failure_code `settlement_overdue` is still in progress past its settlement deadline; keep polling. `NEEDS_REVIEW` means automatic settlement stopped: stop polling, inspect failure_code and details.reason, never retry. Its failure_code says why: `provider_review_required`, `provider_partially_failed` (part of the request ran; value may have moved), `amount_out_below_minimum` (a swap reported less than details.requested_min_amount_out) or `delivered_asset_mismatch` (a withdrawal reported delivering another asset). After provider/manual resolution, explicitly observe using GET /v1/status?correlation_id=…&refresh=true. It is not a terminal failure; the budget stays charged. A terminal FAILED carrying details.never_executed=true or details.never_submitted=true releases the original charge and permits a new attempt with a new key. `PENDING_SIGNATURE` means the intent still waits for the owner's wallet.
+
+## Endpoints
+
+### Owner intents
+- POST /v1/generate-intent: Generate an owner intent for signing. (Idempotency-Key optional)
+- POST /v1/submit-intent: Submit a signed owner intent.
+  body: type, correlation_id, signed_data
+
+### Status
+- GET /v1/status: Get the status of an intent or execution.
+  query: correlation_id, wait_ms?, refresh?
+- GET /v1/agents/{agent_id}/history: List an agent's intents and executions, newest first.
+  query: cursor?, limit?, include_unpaid?
+- GET /v1/agents/{agent_id}/operations/{correlation_id}/proof: Prove an execution's audit trail from the attested transparency log.
+  query: from_size?
+
+### Agents
+- GET /v1/agents: List agents.
+  query: external_user_id?, cursor?
+- GET /v1/agents/{agent_id}: Get an agent.
+- GET /v1/agents/{agent_id}/wallet: Get the agent's custody wallet identity.
+- GET /v1/agents/{agent_id}/balances: Get the agent's balances.
+  query: source?, asset?
+- GET /v1/agents/{agent_id}/addresses/{chain}: Get the custody wallet's NEAR address.
+- GET /v1/agents/{agent_id}/provider/{kind}: Read the wallet provider's request, audit or deposit records for reconciliation.
+  query: limit?, offset?, type?
+
+### Policy
+- GET /v1/agents/{agent_id}/policy: Get the complete policy, active budget usage and scheduling status.
+- GET /v1/agents/{agent_id}/policy/history: List signed policy revisions, newest first.
+  query: cursor?, limit?
+
+### Grants
+- GET /v1/agents/{agent_id}/grants: List every grant for the agent, including revoked ones.
+- GET /v1/agents/{agent_id}/executions/scheduled: List executions the timelock holds, earliest release first.
+  query: cursor?, limit?
+- GET /v1/agents/{agent_id}/containment: Get the agent's API enforcement state and open work.
+  query: grants_cursor?, operations_cursor?
+
+### Approvals
+- GET /v1/agents/{agent_id}/approvals: List requests waiting for approval.
+- GET /v1/agents/{agent_id}/approvals/{approval_id}: Get one approval request.
+
+### Executions
+- POST /v1/agents/{agent_id}/swap: Swap one asset for another. (Idempotency-Key required)
+  body: origin_asset, destination_asset, amount, min_amount_out?, confidential?, dry?
+- POST /v1/agents/{agent_id}/withdraw: Withdraw an asset to an address on any supported chain. (Idempotency-Key required)
+  body: asset, amount, chain, recipient, memo?, confidential?, async?, dry?
+- POST /v1/agents/{agent_id}/transfer: Transfer an asset to another NEAR Intents account. (Idempotency-Key required)
+  body: asset, amount, recipient, confidential?
+- POST /v1/agents/{agent_id}/shield: Move a public balance to the confidential shard. (Idempotency-Key required)
+  body: asset, amount
+- POST /v1/agents/{agent_id}/unshield: Move a confidential balance back to public. (Idempotency-Key required)
+  body: asset, amount
+- POST /v1/agents/{agent_id}/deposit: Get a deposit address that funds the agent from another chain. (Idempotency-Key required)
+  body: origin_asset, destination_asset?, amount?, confidential?
+- POST /v1/agents/{agent_id}/recover: Dispatch an UNCERTAIN execution that provably never reached the provider. (Idempotency-Key required)
+  body: correlation_id, request
+
+### Native accounts
+- POST /v1/agents/{agent_id}/native/near/sign-message: Sign a NEP-413 message with the agent's NEAR key.
+  body: message, encoding?, recipient, nonce
+- POST /v1/agents/{agent_id}/native/near/transfer: Send native NEAR from the agent's NEAR account. (Idempotency-Key required)
+  body: to, amount
+- POST /v1/agents/{agent_id}/native/near/call: Call a NEAR contract from the agent's NEAR account. (Idempotency-Key required)
+  body: receiver_id, method_name, args?, args_base64?, gas?, deposit?
+- POST /v1/agents/{agent_id}/native/evm/sign-typed-data: Sign EIP-712 typed data with the agent's EVM key.
+  body: chain, typed_data
+- POST /v1/agents/{agent_id}/native/evm/sign-message: Sign an EIP-191 message with the agent's EVM key.
+  body: chain, message, encoding?
+- POST /v1/agents/{agent_id}/native/evm/sign-transaction: Sign a serialized EVM transaction with the agent's EVM key.
+  body: chain, unsigned_tx
+- POST /v1/agents/{agent_id}/native/solana/sign-message: Sign an off-chain message with the agent's Solana key.
+  body: message, encoding?
+- POST /v1/agents/{agent_id}/native/solana/sign-transaction: Sign a Solana transaction message with the agent's Solana key.
+  body: unsigned_tx
+
+### Meta
+- GET /v1/tokens: List the assets agents can hold and trade, with USD prices.
+- GET /v1/network: Get the network, supported owner types and live dependency status.
+- GET /v1/releases: List this deployment's releases, newest first.
+- GET /v1/releases/latest: Get the most recently announced release that was not withdrawn.
+- GET /v1/releases/{version}: Get one release by its version.
+- GET /v1/whoami: Identify the calling API key.
+- GET /v1/quotas: Read effective partner resource quotas and usage.

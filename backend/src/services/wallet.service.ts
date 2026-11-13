@@ -109,7 +109,7 @@ export async function verifyWalletOwnership(proof: WalletProof, browserToken: st
   let wallet = claimedWallet ?? await WalletModel.findOne({ ownerUserId: user._id, network, address: proof.accountId })
   if (wallet?.verificationStatus === 'REVOKED') throw new AppError(403, 'WALLET_REVOKED', 'This wallet has been revoked in SpendGuard.')
   const verification = { verificationStatus: 'VERIFIED' as const, verifiedAt: new Date(),
-    verificationMethod: 'NEP413', verificationReference: challenge.challengeId }
+    verificationMethod: 'NEP413', verificationReference: challenge.challengeId, verifiedPublicKey: proof.publicKey }
   try {
     if (wallet) {
       Object.assign(wallet, verification)

@@ -10,11 +10,14 @@ import {
 } from 'lucide-vue-next'
 import { useWallet } from '../composables/useWallet'
 const { networkLabel } = useWallet()
+defineProps<{ activeView: string }>()
+const emit=defineEmits<{navigate:[view:string]}>()
 
 const menuItems = [
-  { label: 'Dashboard', icon: LayoutDashboard },
-  { label: 'Transactions', icon: ArrowLeftRight },
-  { label: 'Activity Logs', icon: History },
+  { label: 'Dashboard', icon: LayoutDashboard, view:'dashboard' },
+  { label: 'Agents & Policies', icon: ShieldCheck, view:'agents' },
+  { label: 'Swaps', icon: ArrowLeftRight, view:'swaps' },
+  { label: 'Activity Logs', icon: History, view:'activity' },
 ]
 </script>
 
@@ -31,10 +34,13 @@ const menuItems = [
       <p class="sidebar-label">WORKSPACE</p>
 
       <button
-        v-for="(item, index) in menuItems"
+        v-for="item in menuItems"
         :key="item.label"
         class="nav-item"
-        :class="{ active: index === 0 }"
+        :class="{ active: activeView === item.view }"
+        @click="emit('navigate',item.view)"
+        :aria-label="item.label"
+        :title="item.label"
       >
         <component :is="item.icon" :size="19" />
         <span>{{ item.label }}</span>
@@ -42,12 +48,12 @@ const menuItems = [
     </div>
 
     <div class="sidebar-bottom">
-      <button class="nav-item">
+      <button class="nav-item" aria-label="Settings" @click="emit('navigate','settings')">
         <Settings :size="19" />
         <span>Settings</span>
       </button>
 
-      <button class="nav-item">
+      <button class="nav-item" aria-label="Help & Support" @click="emit('navigate','help')">
         <CircleHelp :size="19" />
         <span>Help & Support</span>
       </button>

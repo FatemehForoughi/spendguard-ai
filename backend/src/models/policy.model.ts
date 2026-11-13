@@ -19,6 +19,7 @@ const policySchema = new Schema({
   // Limits are per source asset: base units of unrelated assets must never be added together.
   spendingLimits: { type: [spendingLimitSchema], required: true, default: undefined, immutable: true },
   requiresUserApproval: { type: Boolean, required: true, immutable: true },
+  balanceSource: { type: String, enum: ['public', 'confidential'], default: 'public', immutable: true },
   status: {
     type: String,
     enum: ['DRAFT', 'ACTIVE', 'SUPERSEDED', 'DISABLED'],

@@ -9,14 +9,17 @@
     "build": "tsc && node scripts/copy-ai-assets.mjs",
     "test": "node --import tsx --test",
     "migrate:wallet-index": "node scripts/migrate-wallet-index.mjs",
+    "setup:dev": "node scripts/configure-dev.mjs",
+    "test:database": "node --import tsx scripts/check-database.mjs",
     "eval:ai": "node --import tsx scripts/evaluate-ai.mjs",
     "start": "node dist/server.js"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@near-intents-agent-api/sdk": "0.9.0",
     "@near-js/crypto": "^2.3.0",
     "borsh": "^2.0.0",
     "cors": "^2.8.6",

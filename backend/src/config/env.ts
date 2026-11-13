@@ -51,6 +51,9 @@ const envSchema = z.object({
   AGENTS_ON_INTENTS_TIMEOUT_MS: z.coerce.number().int().min(1).max(120_000).default(35_000),
 
   MONGODB_URI: optionalString,
+  GRANT_ENCRYPTION_KEY: z.preprocess((value) => value === '' ? undefined : value,
+    z.string().regex(/^[a-fA-F0-9]{64}$/).optional()),
+  ENABLE_LIVE_EXECUTION: z.enum(['true', 'false']).default('false').transform(value => value === 'true'),
 
   NEAR_NETWORK_ID: z.enum(['mainnet', 'testnet']).default('mainnet'),
   NEAR_RPC_URL: z.preprocess(

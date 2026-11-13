@@ -1,5 +1,7 @@
 # SpendGuard frontend
 
+Agents & Policies, Swaps, Activity Logs, Settings, and Help are functional workspace views. Review signed owner actions and exact swap approvals through these screens. See [the project workflow and setup](../README.md); the automated browser flow uses synthetic provider and wallet responses.
+
 Install with `npm install` and start with `npm run dev`. Start the backend on port
 3000 and open `http://localhost:5173`. The development proxy forwards `/api`;
 `.env.example` describes deployment overrides. Production builds use `npm run build`.

@@ -2,6 +2,8 @@
 
 ## Purpose
 
+**Current acceptance record:** See `backend/docs/phase-status.md`. Phases 4–12 are implemented and automated for the supported NEP-413 wallet flow. Phase 3 real Meteor verification and Phase 13 real signing/spending remain unconfirmed; Phase 14 packaging is prepared, with public demo/submission still pending. Do not represent mock settlement as real Mainnet validation.
+
 This document turns the SpendGuard product scenario into an ordered
 engineering plan.
 

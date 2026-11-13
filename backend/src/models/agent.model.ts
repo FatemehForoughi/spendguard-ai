@@ -7,6 +7,11 @@ const agentSchema = new Schema({
   externalAgentId: { ...identifier, required: false },
   name: { ...identifier, maxlength: 100 },
   operationType: { type: String, enum: ['SWAP'], required: true },
+  busyOperationId: { type: String },
+  pendingIntentId: { type: String },
+  creationRequestId: { type: String },
+  providerRevision: { type: Number, min: 0 },
+  providerPolicyHash: { type: String },
   status: {
     type: String,
     enum: ['PENDING', 'ACTIVE', 'SUSPENDED', 'FAILED', 'ARCHIVED'],
@@ -22,6 +27,7 @@ agentSchema.pre('validate', function () {
 })
 
 agentSchema.index({ ownerUserId: 1, createdAt: -1 })
+agentSchema.index({ ownerUserId: 1, creationRequestId: 1 }, { unique: true, partialFilterExpression: { creationRequestId: { $type: 'string' } } })
 agentSchema.index({ externalAgentId: 1 }, {
   unique: true,
   partialFilterExpression: { externalAgentId: { $type: 'string' } },

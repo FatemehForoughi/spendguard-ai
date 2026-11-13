@@ -46,7 +46,7 @@ const transactionSchema = new Schema(
 transactionSchema.pre('validate', function () {
   // Also cover replacement of the whole embedded operation, which could bypass child setters.
   if (!this.isNew) {
-    for (const field of ['operationId', 'idempotencyKey', 'type', 'inputAssetId', 'outputAssetId', 'inputAmountBaseUnits']) {
+    for (const field of ['operationId', 'idempotencyKey', 'type', 'inputAssetId', 'outputAssetId', 'inputAmountBaseUnits', 'minimumOutputAmountBaseUnits', 'balanceSource']) {
       if (this.isModified(`operation.${field}`)) {
         this.invalidate(`operation.${field}`, 'Operation identity and requested amounts cannot change after creation.')
       }

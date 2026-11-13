@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useWallet } from '../composables/useWallet'
+import { workspaceRequest } from '../services/workspace.api'
 import { ShieldCheck, Activity, AlertTriangle, ArrowUpRight, LoaderCircle } from 'lucide-vue-next'
 import TransactionReview from '../components/TransactionReview.vue'
 import ErrorNotification from '../components/ErrorNotification.vue'
@@ -12,11 +14,18 @@ const analysis = ref<TransactionAnalysis | null>(null)
 const isAnalyzing = ref(false)
 const errorMessage = ref<string | null>(null)
 
-const stats = [
-  { label: 'Transactions Checked', value: '0', icon: Activity },
-  { label: 'Transactions Approved', value: '0', icon: ShieldCheck },
-  { label: 'Threats Blocked', value: '0', icon: AlertTriangle },
-]
+const wallet=useWallet()
+const emit=defineEmits<{navigate:[view:string]}>()
+const summary=ref<{total:number;success:number;blocked:number}|null>(null)
+const stats=computed(()=>[
+  { label:'Swap Previews', value:summary.value?.total??'—',icon:Activity },
+  { label:'Swaps Completed',value:summary.value?.success??'—',icon:ShieldCheck },
+  { label:'Swaps Blocked',value:summary.value?.blocked??'—',icon:AlertTriangle },
+])
+watch(()=>wallet.session.value?.wallet.id,async id=>{
+  summary.value=null;if(!id)return
+  try{const value=await workspaceRequest<{total:number;success:number;blocked:number}>('summary');if(wallet.session.value?.wallet.id===id)summary.value=value}catch{/* Service errors remain available in the workspace retry state. */}
+},{immediate:true})
 
 async function analyzeTransaction() {
   if (!requestText.value.trim() || isAnalyzing.value) return
@@ -60,9 +69,11 @@ function resetAnalysis() {
           <component :is="stat.icon" :size="20" />
         </div>
         <h2>{{ stat.value }}</h2>
-        <p>Since account creation</p>
+        <p>Your verified wallet workspace</p>
       </div>
     </section>
+
+    <section class="workspace-panel"><h2>Agent trading workspace</h2><p>Create an agent, set a spending policy, and review swaps before execution.</p><button class="workspace-button" @click="emit('navigate','agents')">Manage agents & policies</button><button class="workspace-button secondary" @click="emit('navigate','swaps')">Open swaps</button></section>
 
     <section class="transaction-section">
       <div class="section-heading">

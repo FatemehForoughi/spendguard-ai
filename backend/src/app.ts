@@ -6,6 +6,7 @@ import transactionRoutes from './routes/transaction.routes.js'
 import { authRoutes, walletRoutes } from './routes/wallet.routes.js'
 import { AppError } from './errors/app-error.js'
 import { errorHandler } from './middleware/error-handler.js'
+import workspaceRoutes from './routes/workspace.routes.js'
 
 const app = express()
 
@@ -14,6 +15,7 @@ app.use(cors({
   credentials: true,
 }))
 
+app.use('/api/workspace', express.json({ limit: '128kb' }), workspaceRoutes)
 app.use(express.json({ limit: '10kb' }))
 
 app.get('/api/health', (_req, res) => {

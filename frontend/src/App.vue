@@ -3,7 +3,8 @@
 import Sidebar from './components/Sidebar.vue'
 import AppHeader from './components/AppHeader.vue'
 import DashboardView from './views/DashboardView.vue'
-import { onBeforeUnmount, onMounted, provide } from 'vue'
+import { onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import AgentWorkspace from './components/AgentWorkspace.vue'
 import WalletDialog from './components/WalletDialog.vue'
 import { walletKey } from './composables/useWallet'
 import { createWalletFlow } from './services/wallet-flow'
@@ -15,6 +16,7 @@ const wallet = createWalletFlow({
   prepareWallet: prepareMeteorWallet, signChallenge: signWalletChallenge,
   submitProof: submitWalletProof, logout: logoutWallet, host: window.location.host,
 })
+const activeView=ref('dashboard')
 provide(walletKey, wallet)
 const refresh = () => { if (document.visibilityState === 'visible') void wallet.refreshSession() }
 let sessionTimer: ReturnType<typeof setInterval> | undefined
@@ -33,12 +35,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-layout">
-    <Sidebar />
+    <Sidebar :active-view="activeView" @navigate="activeView=$event" />
 
     <main class="main-content">
       <AppHeader />
 
-      <DashboardView />
+      <DashboardView v-if="activeView==='dashboard'" @navigate="activeView=$event" />
+      <AgentWorkspace v-else :view="activeView" />
     </main>
   </div>
   <WalletDialog />

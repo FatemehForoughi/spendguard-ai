@@ -3,6 +3,8 @@ import { env } from './env.js'
 import { UserModel, WalletModel, AgentModel, PolicyModel, GrantModel, TransactionModel } from '../models/index.js'
 import { SessionModel } from '../models/session.model.js'
 import { WalletChallengeModel } from '../models/wallet-challenge.model.js'
+import { OwnerIntentModel } from '../models/owner-intent.model.js'
+import { SecretModel } from '../models/secret.model.js'
 
 export const connectDatabase = async () => {
   try {
@@ -16,6 +18,7 @@ export const connectDatabase = async () => {
       UserModel.init(), WalletModel.init(), AgentModel.init(),
       PolicyModel.init(), GrantModel.init(), TransactionModel.init(),
       SessionModel.init(), WalletChallengeModel.init(),
+      OwnerIntentModel.init(), SecretModel.init(),
     ])
 
     console.log('MongoDB connected successfully')

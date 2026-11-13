@@ -1,5 +1,7 @@
 # SpendGuard backend
 
+The complete agent/policy/grant/swap workflow is documented in the [project README](../README.md), [API contracts](docs/workflow.md), and [phase status](docs/phase-status.md). Run `npm run setup:dev` once to generate the private grant-encryption key. Live execution is disabled by default; use the [controlled-mainnet runbook](docs/mainnet-validation.md) for real validation.
+
 Run `npm install`, copy `.env.example` to `.env`, and configure NEAR AI and MongoDB for the transaction analysis API. Use `npm run dev` for development, `npm test` for offline tests, and `npm run build` for the production build.
 
 ## Backend domain models (Phase 2)

@@ -64,3 +64,9 @@ export async function signWalletChallenge(challenge: WalletChallenge) {
     throw new ApiError('Meteor could not sign the ownership message. Unlock your wallet and approve the message, then try again.', 'WALLET_SIGNING_FAILED')
   }
 }
+
+export async function signOwnerIntent(networkId:'mainnet'|'testnet', payload:{message:string;recipient:string;nonce:string}, accountId:string, publicKey:string) {
+  const result=await signWalletChallenge({ networkId, ...payload, accountId, challengeId:crypto.randomUUID(), expiresAt:new Date(Date.now()+300_000).toISOString() })
+  if (!result || result.accountId!==accountId || result.publicKey!==publicKey) throw new ApiError('Select the registered owner account and signing key in Meteor.','OWNER_ACCOUNT_MISMATCH')
+  return {payload,publicKey:result.publicKey,signature:result.signature}
+}

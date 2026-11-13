@@ -19,6 +19,7 @@ const walletSchema = new Schema({
   verifiedAt: { type: Date },
   verificationMethod: { ...identifier, required: false },
   verificationReference: { ...identifier, required: false },
+  verifiedPublicKey: { type: String, match: /^ed25519:[1-9A-HJ-NP-Za-km-z]{32,44}$/, cast: false },
   revokedAt: { type: Date },
 }, domainOptions)
 
