@@ -2,6 +2,12 @@
 
 Run `npm install`, copy `.env.example` to `.env`, and configure NEAR AI and MongoDB for the transaction analysis API. Use `npm run dev` for development, `npm test` for offline tests, and `npm run build` for the production build.
 
+## Backend domain models (Phase 2)
+
+User, wallet, agent, versioned policy, and grant models now support the planned swap workflow. The existing transaction collection also stores owner-linked operations with exact token amounts, quote snapshots, approval metadata and execution status. See [the model contracts and implementation notes](docs/domain-models.md) for ownership, secure grant references, indexes, compatibility and the boundaries of this phase. Authentication and wallet verification are the next phase.
+
+The User/Wallet portion preserves authenticated identity values, keeps owner and wallet identifiers immutable, and validates verification/revocation evidence. Unverified candidate wallets do not claim addresses globally; proven ownership is protected by a partial unique index. See [User and wallet persistence](docs/domain-models.md#user-and-wallet-persistence) for the contract and the index migration note if you already provisioned the earlier draft.
+
 ## Agents on Intents client
 
 Set `AGENTS_ON_INTENTS_PARTNER_API_KEY` in **backend/.env** to the partner key issued by Agents on Intents. The base URL defaults to `https://api.agentsonintents.com`; overrides must be an HTTPS origin. `AGENTS_ON_INTENTS_TIMEOUT_MS` defaults to 35,000 milliseconds (maximum 120,000), allowing the provider's 30-second status wait.

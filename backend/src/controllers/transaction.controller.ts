@@ -5,6 +5,15 @@ import { TransactionModel } from '../models/transaction.model.js'
 import mongoose from 'mongoose'
 import { AppError } from '../errors/app-error.js'
 
+// These legacy endpoints are anonymous. Owned records need authenticated routes in later phases.
+function publicAnalysisFilter() {
+  return {
+    ownerUserId: { $exists: false },
+    agentId: { $exists: false },
+    operation: { $exists: false },
+  }
+}
+
 export async function analyzeTransactionController(
   req: Request,
   res: Response,
@@ -65,13 +74,13 @@ export async function getTransactionsController(
     const skip = (page - 1) * limit
 
     const [transactions, total] = await Promise.all([
-      TransactionModel.find()
+      TransactionModel.find(publicAnalysisFilter())
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
 
-      TransactionModel.countDocuments(),
+      TransactionModel.countDocuments(publicAnalysisFilter()),
     ])
 
     return res.status(200).json({
@@ -107,7 +116,7 @@ export async function getTransactionByIdController(
       })
     }
 
-    const transaction = await TransactionModel.findById(id).lean()
+    const transaction = await TransactionModel.findOne({ _id: id, ...publicAnalysisFilter() }).lean()
 
     if (!transaction) {
       return res.status(404).json({
