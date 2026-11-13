@@ -32,7 +32,9 @@ function userError(error: unknown): AppError {
 export const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
   if (res.headersSent) return next(error)
   const failure = userError(error)
-  console.error('Request failed:', error)
+  // Body-parser and database errors can include raw request bodies. Log only
+  // safe application identifiers, never wallet signatures or credentials.
+  console.error('Request failed:', { code: failure.code, statusCode: failure.statusCode })
   return res.status(failure.statusCode).json({
     success: false,
     code: failure.code,

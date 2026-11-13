@@ -1,5 +1,16 @@
-# Vue 3 + TypeScript + Vite
+# SpendGuard frontend
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Install with `npm install` and start with `npm run dev`. Start the backend on port
+3000 and open `http://localhost:5173`. The development proxy forwards `/api`;
+`.env.example` describes deployment overrides. Production builds use `npm run build`.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+The wallet dialog supports NEAR ownership verification through Meteor Wallet.
+Enter your account ID, review the message, and select the same account in Meteor
+when signing. The network comes from the backend's `NEAR_NETWORK_ID`. The interface
+shows ownership as verified only after the backend establishes a session. Wallet
+ownership verification creates no access key and authorizes no spending.
+
+Run `npm test` for frontend behavior tests. `npm run test:browser` tests the actual
+SDK path with mocked APIs and wallet responses in headless Microsoft Edge. See
+[the wallet integration documentation](../backend/docs/wallet-verification.md)
+for configuration, alternate browser channels, deployment, and testing limits.

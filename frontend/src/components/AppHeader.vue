@@ -1,6 +1,8 @@
 
 <script setup lang="ts">
 import { Bell, Wallet } from 'lucide-vue-next'
+import { useWallet } from '../composables/useWallet'
+const { session, verified, busy, networkLabel, openDialog } = useWallet()
 </script>
 
 <template>
@@ -13,16 +15,16 @@ import { Bell, Wallet } from 'lucide-vue-next'
     <div class="header-actions">
       <div class="testnet-badge">
         <span class="network-dot"></span>
-        Testnet
+        {{ networkLabel }}
       </div>
 
       <button class="icon-button" aria-label="Notifications">
         <Bell :size="19" />
       </button>
 
-      <button class="connect-button">
+      <button class="connect-button" :disabled="!!busy" @click="openDialog">
         <Wallet :size="18" />
-        Connect Wallet
+        {{ verified && session ? session.wallet.address : 'Connect Wallet' }}
       </button>
     </div>
   </header>

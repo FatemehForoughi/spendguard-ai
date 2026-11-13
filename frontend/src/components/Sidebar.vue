@@ -8,6 +8,8 @@ import {
   Settings,
   CircleHelp,
 } from 'lucide-vue-next'
+import { useWallet } from '../composables/useWallet'
+const { networkLabel } = useWallet()
 
 const menuItems = [
   { label: 'Dashboard', icon: LayoutDashboard },
@@ -54,7 +56,7 @@ const menuItems = [
         <span class="network-dot"></span>
         <div>
           <p>Network</p>
-          <strong>Testnet Mode</strong>
+          <strong>{{ networkLabel }}</strong>
         </div>
       </div>
     </div>

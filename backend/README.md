@@ -4,9 +4,13 @@ Run `npm install`, copy `.env.example` to `.env`, and configure NEAR AI and Mong
 
 ## Backend domain models (Phase 2)
 
-User, wallet, agent, versioned policy, and grant models now support the planned swap workflow. The existing transaction collection also stores owner-linked operations with exact token amounts, quote snapshots, approval metadata and execution status. See [the model contracts and implementation notes](docs/domain-models.md) for ownership, secure grant references, indexes, compatibility and the boundaries of this phase. Authentication and wallet verification are the next phase.
+User, wallet, agent, versioned policy, and grant models now support the planned swap workflow. The existing transaction collection also stores owner-linked operations with exact token amounts, quote snapshots, approval metadata and execution status. See [the model contracts and implementation notes](docs/domain-models.md) for ownership, secure grant references, indexes, compatibility and the boundaries of this phase.
 
 The User/Wallet portion preserves authenticated identity values, keeps owner and wallet identifiers immutable, and validates verification/revocation evidence. Unverified candidate wallets do not claim addresses globally; proven ownership is protected by a partial unique index. See [User and wallet persistence](docs/domain-models.md#user-and-wallet-persistence) for the contract and the index migration note if you already provisioned the earlier draft.
+
+## Wallet ownership verification (Phase 3)
+
+The frontend now connects through a reviewed NEP-413 message signed in Meteor Wallet. The backend verifies the signature and full-access key, links the wallet to the existing user model, and issues a revocable HttpOnly session. Set `NEAR_NETWORK_ID`, optionally `NEAR_RPC_URL`, and an exact `CLIENT_URL`; a configured MongoDB database is required. See [wallet setup, API, security rules, and validation](docs/wallet-verification.md). No access keys or transactions are created by this flow.
 
 ## Agents on Intents client
 

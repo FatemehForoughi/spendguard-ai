@@ -51,6 +51,16 @@ const envSchema = z.object({
   AGENTS_ON_INTENTS_TIMEOUT_MS: z.coerce.number().int().min(1).max(120_000).default(35_000),
 
   MONGODB_URI: optionalString,
+
+  NEAR_NETWORK_ID: z.enum(['mainnet', 'testnet']).default('mainnet'),
+  NEAR_RPC_URL: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.string().url().refine((value) => {
+      const url = new URL(value)
+      return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
+    }, 'The NEAR RPC URL must use HTTPS without credentials, query parameters, or fragments.').optional(),
+  ),
+  NEAR_RPC_TIMEOUT_MS: z.coerce.number().int().min(1).max(30_000).default(8_000),
 })
 
 const result = envSchema.safeParse(process.env)

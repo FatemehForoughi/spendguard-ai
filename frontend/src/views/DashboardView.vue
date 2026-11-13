@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ShieldCheck, Wallet, Activity, AlertTriangle, ArrowUpRight, LoaderCircle } from 'lucide-vue-next'
+import { ShieldCheck, Activity, AlertTriangle, ArrowUpRight, LoaderCircle } from 'lucide-vue-next'
 import TransactionReview from '../components/TransactionReview.vue'
 import ErrorNotification from '../components/ErrorNotification.vue'
+import WalletStatus from '../components/WalletStatus.vue'
 import { analyzeTransaction as analyzeTransactionApi } from '../services/transaction.api'
 import type { TransactionAnalysis } from '../types/transaction'
 
@@ -98,15 +99,7 @@ function resetAnalysis() {
       </div>
     </section>
 
-    <section class="wallet-section">
-      <div class="wallet-icon">
-        <Wallet :size="24" />
-      </div>
-      <div>
-        <h3>No wallet connected</h3>
-        <p>Connect a Testnet wallet to get started.</p>
-      </div>
-    </section>
+    <WalletStatus />
 
     <TransactionReview
       v-if="analysis"

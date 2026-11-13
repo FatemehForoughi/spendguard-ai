@@ -136,6 +136,13 @@ timestamps.
 
 ## Phase 3 --- Implement Wallet Ownership Verification
 
+**Implementation status:** Backend challenge/signature/full-access-key verification,
+user/wallet association, revocable server sessions, and frontend Meteor Wallet
+connection are implemented with automated security and browser tests. Live MongoDB
+index enforcement and a real development-wallet proof remain manual integration
+validation; no real-wallet signing or transaction is performed by the tests. See
+`backend/docs/wallet-verification.md` for setup and validation details.
+
 ### Tasks
 
 1.  Identify the wallet connection approach already used by the
