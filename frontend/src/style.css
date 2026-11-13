@@ -360,6 +360,9 @@ button {
 .wallet-status-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .wallet-section { flex-wrap: wrap; }
 .wallet-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   width: min(540px, calc(100vw - 32px));
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
@@ -384,6 +387,8 @@ button {
 .wallet-security-note { font-size: 12px; color: #aab6c8; line-height: 1.6; margin-top: 19px; }
 .wallet-provider-link { color: #42d6a4; font-size: 12px; }
 .wallet-error, .wallet-section p.wallet-error { color: #ffadb6; font-size: 13px; line-height: 1.6; margin-top: 14px; }
+.wallet-service-notice { margin-top: 18px; padding: 14px; border: 1px solid #34435a; border-radius: 9px; }
+.wallet-service-notice p { margin: 0 0 12px; color: #aab6c8; font-size: 13px; line-height: 1.6; }
 .wallet-proof-message { white-space: pre-wrap; overflow-wrap: anywhere; background: #0c1422; padding: 16px; border: 1px solid #263247; border-radius: 9px; font-size: 12px; line-height: 1.8; }
 .wallet-proof-details { display: grid; grid-template-columns: 75px minmax(0, 1fr); gap: 8px; font-size: 12px; color: #aab6c8; margin: 18px 0; }
 .wallet-proof-details dd { margin: 0; overflow-wrap: anywhere; }

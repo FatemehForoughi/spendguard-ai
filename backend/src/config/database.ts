@@ -20,7 +20,7 @@ export const connectDatabase = async () => {
 
     console.log('MongoDB connected successfully')
   } catch (error) {
-    console.error('MongoDB connection failed:', error)
+    console.error('MongoDB initialization failed. Check the connection and index definitions.')
     throw error
   }
 }

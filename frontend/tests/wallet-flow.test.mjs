@@ -37,6 +37,57 @@ test('an entered wallet address does not produce a verified session', async () =
   assert.equal(calls.some(([method]) => method === 'sign'), false)
 })
 
+test('a first visit and opening the dialog do not sign or load Meteor before an account is entered', async () => {
+  const { flow, calls } = fixture()
+  await flow.initialize()
+  await flow.openDialog()
+  assert.equal(flow.accountId.value, '')
+  assert.equal(flow.error.value, '')
+  assert.equal(flow.connectionError.value, '')
+  assert.equal(flow.ready.value, true)
+  assert.deepEqual(calls, [])
+})
+
+test('a session gateway failure preserves network settings and offers recovery without an account error', async () => {
+  let available = false
+  const { flow, calls } = fixture({ getSession: async () => {
+    if (!available) throw new Error('502 Bad Gateway')
+    return null
+  } })
+  await flow.initialize()
+  await flow.openDialog()
+  assert.equal(flow.config.value.networkId, 'mainnet')
+  assert.equal(flow.error.value, '')
+  assert.match(flow.connectionError.value, /unavailable/)
+  assert.equal(flow.ready.value, false)
+  flow.accountId.value = 'alice.near'
+  await flow.prepareChallenge()
+  assert.deepEqual(calls, [])
+  available = true
+  await flow.initialize()
+  assert.equal(flow.ready.value, true)
+  assert.equal(flow.connectionError.value, '')
+  assert.equal(flow.accountId.value, 'alice.near')
+  await flow.prepareChallenge()
+  assert.equal(flow.challenge.value.accountId, 'alice.near')
+})
+
+test('a configuration failure never restores an unconfirmed session and can recover on refresh', async () => {
+  let available = false
+  const { flow } = fixture({ getConfig: async () => {
+    if (!available) throw new Error('502 Bad Gateway')
+    return { networkId: 'mainnet', walletProvider: 'meteor-wallet', challengeLifetimeSeconds: 300 }
+  }, getSession: async () => session })
+  await flow.initialize()
+  assert.equal(flow.session.value, null)
+  assert.equal(flow.ready.value, false)
+  assert.equal(flow.error.value, '')
+  available = true
+  await flow.refreshSession()
+  assert.equal(flow.verified.value, true)
+  assert.equal(flow.connectionError.value, '')
+})
+
 test('the exact reviewed challenge is signed and verified before showing a connected wallet', async () => {
   const { flow, calls } = fixture()
   await flow.initialize()
@@ -49,6 +100,22 @@ test('the exact reviewed challenge is signed and verified before showing a conne
   assert.equal(flow.session.value.wallet.address, 'alice.near')
   assert.equal(flow.challenge.value, null)
   assert.equal(flow.dialogOpen.value, false)
+})
+
+test('a returned signature enters ownership verification before the wallet is connected', async () => {
+  let finishVerification
+  const { flow } = fixture({ submitProof: () => new Promise(resolve => { finishVerification = resolve }) })
+  await flow.initialize()
+  flow.accountId.value = 'alice.near'
+  await flow.prepareChallenge()
+  const verification = flow.verifyChallenge()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(flow.busy.value, 'verifying')
+  assert.equal(flow.verified.value, false)
+  finishVerification(session)
+  await verification
+  assert.equal(flow.verified.value, true)
+  assert.equal(flow.busy.value, '')
 })
 
 test('wallet cancellation leaves no session and requires a fresh challenge', async () => {

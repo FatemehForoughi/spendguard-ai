@@ -20,8 +20,11 @@ export function createWalletFlow(api: WalletDependencies) {
   const challenge = ref<WalletChallenge | null>(null)
   const accountId = ref('')
   const dialogOpen = ref(false)
-  const busy = ref<'loading' | 'preparing' | 'signing' | 'disconnecting' | ''>('')
+  const busy = ref<'loading' | 'preparing' | 'signing' | 'verifying' | 'disconnecting' | ''>('')
   const error = ref('')
+  const connectionError = ref('')
+  const sessionReady = ref(false)
+  const ready = computed(() => Boolean(config.value && sessionReady.value))
   const verified = computed(() => Boolean(session.value && session.value.wallet.verificationStatus === 'VERIFIED'))
   const networkLabel = computed(() => config.value ? `NEAR ${config.value.networkId === 'mainnet' ? 'Mainnet' : 'Testnet'}` : 'NEAR')
 
@@ -34,30 +37,34 @@ export function createWalletFlow(api: WalletDependencies) {
     if (busy.value) return
     busy.value = 'loading'
     error.value = ''
+    connectionError.value = ''
     try {
-      const [settings, currentSession] = await Promise.all([api.getConfig(), api.getSession()])
-      config.value = settings
-      acceptSession(currentSession)
-    } catch {
-      session.value = null
-      error.value = 'Could not load your wallet connection. Please try again.'
+      const [settings, currentSession] = await Promise.allSettled([api.getConfig(), api.getSession()])
+      config.value = settings.status === 'fulfilled' ? settings.value : null
+      sessionReady.value = settings.status === 'fulfilled' && currentSession.status === 'fulfilled'
+      acceptSession(currentSession.status === 'fulfilled' ? currentSession.value : null)
+      if (!ready.value) connectionError.value = 'Wallet connection is unavailable. Please try again shortly.'
     } finally { busy.value = '' }
   }
 
   async function refreshSession() {
-    if (busy.value || !config.value) return
-    try { acceptSession(await api.getSession()) } catch { session.value = null }
+    if (busy.value) return
+    if (!ready.value) return initialize()
+    try {
+      acceptSession(await api.getSession())
+      connectionError.value = ''
+    } catch {
+      session.value = null
+      sessionReady.value = false
+      connectionError.value = 'Wallet connection is unavailable. Please try again shortly.'
+    }
   }
 
   async function openDialog() {
     dialogOpen.value = true
     error.value = ''
     challenge.value = null
-    if (!config.value) await initialize()
-    if (config.value) {
-      try { await api.prepareWallet(config.value.networkId) }
-      catch { error.value = 'Could not load Meteor Wallet. Please try again.' }
-    }
+    if (!ready.value) await initialize()
   }
 
   function closeDialog() {
@@ -68,7 +75,7 @@ export function createWalletFlow(api: WalletDependencies) {
   }
 
   async function prepareChallenge() {
-    if (busy.value || !config.value) return
+    if (busy.value || !ready.value || !config.value) return
     error.value = ''
     const address = accountId.value.trim()
     if (address.length < 2 || address.length > 64 || !/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(address)) {
@@ -90,7 +97,7 @@ export function createWalletFlow(api: WalletDependencies) {
   }
 
   async function verifyChallenge() {
-    if (busy.value || !challenge.value) return
+    if (busy.value || !ready.value || !challenge.value) return
     const review = challenge.value
     if (Date.parse(review.expiresAt) <= now()) {
       challenge.value = null
@@ -102,9 +109,9 @@ export function createWalletFlow(api: WalletDependencies) {
     try {
       const proof = await api.signChallenge(review)
       if (!proof) throw new Error('Meteor did not return a signature. Please start again.')
-      if (proof.accountId !== review.accountId || proof.state !== review.challengeId) {
-        throw new Error('The signed account or verification request changed. Please start again.')
-      }
+      if (proof.accountId !== review.accountId) throw new Error(`Meteor signed with a different account. Select ${review.accountId} and start again.`)
+      if (proof.state !== review.challengeId) throw new Error('The signed verification request changed. Please start again.')
+      busy.value = 'verifying'
       const result = await api.submitProof(review.challengeId, proof)
       if (result.wallet.address !== review.accountId || result.wallet.network !== `near:${review.networkId}`) {
         throw new Error('The verified wallet response did not match your request.')
@@ -138,7 +145,7 @@ export function createWalletFlow(api: WalletDependencies) {
     } finally { busy.value = '' }
   }
 
-  return { session, config, challenge, accountId, dialogOpen, busy, error, verified, networkLabel,
+  return { session, config, challenge, accountId, dialogOpen, busy, error, connectionError, ready, verified, networkLabel,
     initialize, refreshSession, openDialog, closeDialog, prepareChallenge, verifyChallenge, disconnect }
 }
 

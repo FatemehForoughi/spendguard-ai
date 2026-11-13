@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@meteorwallet/sdk": "1.0.24",
     "@near-wallet-selector/core": "^10.1.4",
     "@near-wallet-selector/meteor-wallet": "^10.1.4",
     "@tailwindcss/vite": "^4.3.3",
